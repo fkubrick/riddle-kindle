@@ -85,6 +85,27 @@ function State.load(data)
     return data
 end
 
+-- A valid committed file always wins. An interrupted write may leave a complete
+-- .part next to an empty/missing main file; promote it without opening it for write.
+function State.read(path)
+    local stored = Ink.read(path, State.max_bytes)
+    local session = State.load(stored)
+    if session then return session, stored ~= session end
+    local lfs = require("libs/libkoreader-lfs")
+    local attributes = lfs.attributes(path)
+    if attributes and attributes.size ~= 0 then return nil end
+    local part = path .. ".part"
+    local pending = Ink.read(part, State.max_bytes)
+    session = State.load(pending)
+    if session then
+        if not os.rename(part, path) then return nil end
+        if not require("ffi/util").fsyncDirectory(path) then return nil end
+        return session, pending ~= session
+    end
+    if not attributes and not lfs.attributes(part) then return State.new(), false end
+    return nil
+end
+
 function State.write(path, data)
     local raw = Json.encode(data)
     if #raw > State.max_bytes then return false end

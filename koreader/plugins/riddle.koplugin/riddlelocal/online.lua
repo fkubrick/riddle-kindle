@@ -321,9 +321,7 @@ function View.open(kui)
         return
     end
     local path = dir .. "/riddle-online-state.json"
-    local stored = Ink.read(path, State.max_bytes)
-    local session = State.load(stored)
-    if not stored and not require("libs/libkoreader-lfs").attributes(path) then session = State.new() end
+    local session, migrated = State.read(path)
     if not session then
         UI:show(InfoMessage:new{ text = "Le brouillon du journal ne peut pas être ouvert." })
         return
@@ -340,7 +338,7 @@ function View.open(kui)
             return
         end
     end
-    local migration_failed = stored and stored ~= session and not State.write(path, session)
+    local migration_failed = migrated and not State.write(path, session)
     local view = View:new{
         kui = kui, session = session, state_path = path, token = config.token, storage_error = migration_failed,
     }

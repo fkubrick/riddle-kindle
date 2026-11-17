@@ -32,6 +32,8 @@ Keep this configuration file private. The client is configured with your relayâ€
 
 Replies replace the previous displayed reply automatically. A reply arriving while you write waits while your draft is preserved. Unsent pages survive closing and reopening. Up to eight queued pages/replies are retained, with the active draft kept when the queue is full.
 
+If the main journal state is empty or missing after an interrupted save, opening the journal can recover a fully validated pending `.part` file. A valid main state always takes precedence. Nonempty damaged files and incomplete pending writes are left untouched for manual recovery.
+
 The user-facing controls are currently French. The plugin receives replies from the configured relay every five seconds when idle. Assistant response latency depends on the external assistant and its notification mechanism.
 
 ## Waiting animation
