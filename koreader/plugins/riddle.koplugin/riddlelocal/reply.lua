@@ -41,6 +41,8 @@ end
 function Reply:replace(id,text)
     Base.replace(self,id,text)
     if self.expire then UI:unschedule(self.expire) end
+    self.expire,self.hide_due=nil,nil
+    if self.persistent then return end
     self.hide_due=time.now()+time.s(.6*#Base.groups(text)+30)
     self.expire=function()
         if UI:getTopmostVisibleWidget()~=self then UI:scheduleIn(1,self.expire); return end
@@ -56,7 +58,7 @@ function Reply:onSuspend()
 end
 
 function Reply:onResume()
-    if self.pause_at then self.hide_due=self.hide_due+time.now()-self.pause_at end
+    if self.pause_at and self.hide_due then self.hide_due=self.hide_due+time.now()-self.pause_at end
     self.pause_at=nil
     if self.expire then UI:scheduleIn(math.max(0,time.to_s(self.hide_due-time.now())),self.expire) end
 end

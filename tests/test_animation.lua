@@ -47,53 +47,52 @@ local a=Animation:new{image=image,ink_y=0,submission=true,leave=function(write,a
     closed=closed+1; if write then write_swipes=write_swipes+1 end; if auto then automatic=automatic+1 end
 end}
 top=a; a:onShow()
-assert(a.phase=='absorb' and a.duration==35)
+assert(a.phase=='absorb' and a.duration==40)
 local tap={handler='onGesture',args={{ges='tap',hit=true}}}
 local swipe={handler='onGesture',args={{ges='swipe',direction='east',distance=60}}}
 local idle=a.journal_controls
 assert(not a[1]); assert(a:handleEvent(tap) and a[1] and closed==0)
 now=5; idle.expire(); assert(not a[1])
-now=10; a:step(); assert(image.data[70][56]>0 and image:inkCount()>0)
+now=10; a:step(); assert(image:inkCount()>0)
 local paths={{{1,1},{2,3},{3,2}},{{7,6},{8,8},{9,6}}}
 a:setReply(paths,'reply-1',nil,{1,2})
 assert(a.phase=='absorb' and a.submission_active,'early reception must not discard submitted ink')
 now=34; a:step(); assert(a.phase=='absorb')
-now=35; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
-now=37; a:step(); assert(a.completed==0 and image:inkCount()>0)
-now=39; a:step(); assert(a.completed==1)
-now=43; a:step(); assert(a.phase=='reading' and a.hide_due==73)
-now=72; a:step(); assert(automatic==0)
-now=73; a:step(); assert(automatic==1 and write_swipes==1)
+now=40; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
+now=42; a:step(); assert(a.completed==0 and image:inkCount()>0)
+now=44; a:step(); assert(a.completed==1)
+now=48; a:step(); assert(a.phase=='reading' and a.hide_due==78)
+now=77; a:step(); assert(automatic==0)
+now=78; a:step(); assert(automatic==1 and write_swipes==1)
 local menus=0; a.open_menu=function() menus=menus+1 end
 assert(a:handleEvent({handler='onGesture',args={{ges='swipe',direction='south',pos={x=40,y=3},distance=50}}}))
 assert(menus==1 and a:handleEvent(swipe) and write_swipes==2)
 a:onSuspend(); assert(not scheduled[a.advance]); now=100; a:onResume(); assert(scheduled[a.advance])
 a:onCloseWidget(); assert(image.freed and not scheduled[a.advance])
 
--- No canned phrase or polling animation starts after absorption.
+-- A late answer gathers the visible waiting drops before its first word.
 now=0; image=makeImage(120,180); image:paintRect(50,50,3,20,0)
 local empty=Animation:new{image=image,submission=true,leave=function() end}
-top=empty; now=35; empty:step()
+top=empty; now=40; empty:step()
 assert(empty.phase=='waiting' and image:inkCount()==0 and not empty.message_id)
+now=50; empty:step(); assert(image:inkCount()>0)
+local waitingCount=image:inkCount()
+now=70; empty:step(); assert(image:inkCount()==waitingCount)
+empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='gather')
+now=72; empty:step(); assert(empty.phase=='reveal')
 empty:onCloseWidget()
 
--- Random burning is opt-in and can select either branch. Explicit replies
--- burn only when enabled, and a newer reply resets the automatic-hide timer.
-local random=math.random
-math.random=function(n) return n==4 and 1 or 17 end
 now=0
-local burned=Animation:new{image=makeImage(120,180),submission=true,paper_burn=true,leave=function() end}
-assert(burned.phase=='burn'); top=burned; now=35; burned:step(); assert(burned.phase=='waiting')
-burned:setReply(paths,'spontaneous','burn',{1,2}); assert(burned.phase=='burn' and burned.duration==8)
-now=43; burned:step(); assert(burned.phase=='reveal')
-now=51; burned:step(); assert(burned.hide_due==81)
-burned:setReply(paths,'newer',nil,{2}); assert(not burned.hide_due and burned.phase=='erase')
-now=52; burned:step(); now=60; burned:step(); assert(burned.hide_due==90)
+local burned=Animation:new{image=makeImage(120,180),paper_burn=true,leave=function() error('spontaneous expired') end}
+top=burned
+burned:setReply(paths,'spontaneous','burn',{1,2},true)
+assert(burned.phase=='burn')
+now=8; burned:step(); now=16; burned:step(); now=160; burned:step()
+assert(burned.phase=='reading' and not burned.hide_due)
+burned:setReply(paths,'newer',nil,{2}); now=161; burned:step(); now=169; burned:step()
+assert(burned.hide_due==199)
 burned:onCloseWidget()
-math.random=function(n) return n==4 and 2 or 17 end
-local ordinary=Animation:new{image=makeImage(120,180),submission=true,paper_burn=true,leave=function() end}
-assert(ordinary.phase=='absorb'); ordinary:onCloseWidget()
 local disabled=Animation:new{image=makeImage(120,180),paper_burn=false,leave=function() end}
 disabled:setReply(paths,'no-burn','burn',{2}); assert(disabled.phase=='reveal'); disabled:onCloseWidget()
-math.random=random
+
 for _,mode in ipairs(refreshes) do assert(mode~='full','ink effects requested a flashing full refresh') end

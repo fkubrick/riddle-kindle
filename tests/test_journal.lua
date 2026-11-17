@@ -81,7 +81,9 @@ local function online(session)
         local dialog
         dialog = {
             page_id = page_id,
-            setReply = function(d,paths,mid) d.message_id,d.paths = mid,paths end,
+            setReply = function(d,paths,mid,_,_,persistent)
+                d.message_id,d.paths,d.persistent = mid,paths,persistent
+            end,
             onCloseWidget = function() end,
             write = function() self:leaveReply(dialog,true,false) end,
         }
@@ -138,6 +140,7 @@ assert(foreground == o and #disk.draft == 1 and disk.reply.message_id == msg2 an
 -- A newly received answer replaces the display without an acknowledgement.
 o:showReply(true)
 assert(o.reply_view.message_id == msg2 and o.reply_view.paths)
+assert(o.reply_view.persistent == false)
 advance(57)
 assert(lastRequest().op == "poll" and lastRequest().arg == id)
 local match_a = lastRequest()
@@ -243,4 +246,38 @@ advance(now+12)
 assert(#o.session.outbox==0 and #o.session.draft==1)
 addStroke(o); assert(not o.hold_draft)
 advance(now+5); assert(#o.session.outbox==1)
+o:stopConnector()
+
+o = online()
+o.session.reply = answer(spont,spont).reply
+o:showReply(false)
+assert(o.reply_view.persistent == true)
+o.reply_view.write()
+o:stopConnector()
+
+-- A text message waits for the outgoing page to disappear, then stays onscreen.
+o = online()
+local absorbing = o:animation(buffer)
+absorbing.submission_active = true
+o.session.reply = { id=spont, message_id=spont, text="Message" }
+o:tick()
+assert(o.reply_view == absorbing and scheduled[o._tick] == now + .5)
+absorbing.submission_active = false
+advance(now+.5)
+local spontaneous = o.reply_view
+assert(spontaneous ~= absorbing and spontaneous.persistent and not spontaneous.expire)
+spontaneous:onSuspend()
+advance(now+31)
+spontaneous:onResume()
+assert(foreground == spontaneous and not spontaneous.hide_due)
+spontaneous.button.callback()
+assert(foreground == o and disk.seen == spont)
+o:stopConnector()
+
+o = online()
+o.session.reply = { id=id, message_id=msg, text="Réponse" }
+o:showReply(false)
+assert(o.reply_view.expire and not o.reply_view.persistent)
+advance(now+31)
+assert(foreground == o and disk.last_reply.message_id == msg)
 o:stopConnector()

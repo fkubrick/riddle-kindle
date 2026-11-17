@@ -10,7 +10,7 @@ local Model = require("riddlelocal/model")
 local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
 require("random")
-local FRAME, ABSORB_SECONDS, READ_SECONDS = .3,35,30
+local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,40,30
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
@@ -38,15 +38,8 @@ function Animation:init()
     if self.submission then
         self.submission_active=true
         self.duration=ABSORB_SECONDS
-        if self.paper_burn==true and math.random(4)==1 then
-            self.phase="burn"
-            self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
-            self.burn_progress=0
-        else
-            self.phase="absorb"
-            -- Let the controller start the upload before preparing the raster.
-            self.prepare_absorption=true
-        end
+        self.phase="absorb"
+        self.prepare_absorption=true
     elseif self.paths then
         self:setReply(self.paths,"local-preview",nil,self.block_ends)
     end
@@ -72,21 +65,36 @@ function Animation:beginReveal()
     self.phase,self.started="reveal",time.now()
     self.completed=0
     self.group_plan=nil
-    self.reveal_seconds=math.min(24,math.max(8,#self.groups*3))
+    self.reveal_seconds=math.max(8,#self.groups*2.4)
+    if self.gather_finished then
+        self.started=self.started-time.s(self.reveal_seconds/#self.groups*.2)
+    end
 end
 function Animation:startResponse()
-    if not self.message_id then self.phase="waiting"; return end
+    if not self.message_id then self.phase,self.started="waiting",time.now(); self.wait_drops={}; return end
     if self.play_burn then
+        if self.wait_drops then
+            local area=FX.clearDrops(self.image,self.w,self.h,self.wait_drops,colors)
+            if area then UI:setDirty(self,"ui",Geom:new(area)) end
+        end
+        self.wait_drops,self.drop_origins,self.gather_finished=nil,nil,nil
         self.play_burn=false
         self.phase,self.started,self.duration="burn",time.now(),8
         self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
         self.burn_progress=0
+    elseif self.wait_drops and next(self.wait_drops) then
+        self.phase,self.started="gather",time.now()
+        self.drop_origins={}
+        for index,drop in ipairs(self.wait_drops) do
+            self.drop_origins[index]={x=drop.x,y=drop.y,w=drop.w,h=drop.h,gray=drop.gray}
+        end
     else self:beginReveal() end
 end
 
-function Animation:setReply(paths,id,effect,block_ends)
+function Animation:setReply(paths,id,effect,block_ends,persistent)
     if self.message_id==id then return end
     self.message_id=id
+    self.persistent=persistent==true
     self.hide_due=nil
     self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
     self.groups={}
@@ -105,6 +113,7 @@ function Animation:setReply(paths,id,effect,block_ends)
         else
             self.phase,self.started,self.duration="erase",time.now(),.6
             self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,14)
+            self.wait_drops,self.drop_origins,self.gather_finished=nil,nil,nil
             self.erase_stage=-1
             self.ink_plan,self.burn_plan=nil,nil
         end
@@ -177,7 +186,21 @@ function Animation:step()
             elseif phase=="burn" then self:beginReveal()
             else self:startResponse() end
         end
+    elseif self.phase=="waiting" and self.wait_drops then
+        dirty(FX.waitDrops(self.image,self.w,self.h,(elapsed%20)/20,self.wait_drops,colors))
+    elseif self.phase=="gather" then
+        local progress=math.min(1,elapsed/2)
+        dirty(FX.gatherDrops(self.image,self.w,self.h,self.drop_origins,progress,self.wait_drops,colors,self.groups[1].paths))
+        if progress==1 then
+            self.gather_finished=true
+            self:beginReveal()
+        end
     elseif self.phase=="reveal" then
+        if self.gather_finished then
+            dirty(FX.clearDrops(self.image,self.w,self.h,self.wait_drops,colors))
+            self.gather_finished=nil
+            self.drop_origins,self.wait_drops=nil,nil
+        end
         local per_group=self.reveal_seconds/#self.groups
         local complete=math.min(#self.groups,math.floor(elapsed/per_group))
         while self.completed<complete do
@@ -193,7 +216,7 @@ function Animation:step()
         end
         if self.completed==#self.groups then
             self.phase="reading"
-            self.hide_due=now+time.s(READ_SECONDS)
+            if not self.persistent then self.hide_due=now+time.s(READ_SECONDS) end
         else
             local group=self.groups[self.completed+1]
             if not self.group_plan then
@@ -207,13 +230,14 @@ function Animation:step()
             local area=FX.render(self.image,self.group_plan,1-progress,colors)
             if area then self:restoreCompleted(area); dirty(area) end
         end
-    elseif self.phase=="reading" and now>=self.hide_due then
+    elseif self.phase=="reading" and self.hide_due and now>=self.hide_due then
         self.leave(true,true)
         return
     end
     if rect then UI:setDirty(self,refresh,Geom:new(rect)) end
-    if self.phase=="reading" then UI:scheduleIn(math.max(FRAME,time.to_s(self.hide_due-now)),self.advance)
-    elseif self.phase~="waiting" then UI:scheduleIn(FRAME,self.advance) end
+    if self.phase=="reading" then
+        if self.hide_due then UI:scheduleIn(math.max(FRAME,time.to_s(self.hide_due-now)),self.advance) end
+    elseif self.phase~="waiting" or self.wait_drops then UI:scheduleIn(FRAME,self.advance) end
 end
 
 function Animation:paintTo(bb,x,y)

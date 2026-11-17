@@ -147,6 +147,7 @@ function View:showReply(manual)
         self:flushPending()
         if not self:saveDraft() then return end
     end
+    local persistent = reply.id == reply.message_id
     if reply.paths then
         if dialog and not dialog.setReply then
             UI:close(dialog)
@@ -157,8 +158,9 @@ function View:showReply(manual)
             blank:fill(BB.COLOR_WHITE)
             dialog = self:animation(blank)
         end
-        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends)
+        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends, persistent)
     else
+        if dialog and dialog.submission_active then return true end
         if dialog then
             UI:close(dialog)
         else
@@ -167,6 +169,7 @@ function View:showReply(manual)
         end
         dialog = Reply:new{
             message_id = reply.message_id, text = reply.text,
+            persistent = persistent,
             open_menu = function() self.kui.menu:onShowMenu() end,
             dismiss = function() self:leaveReply(dialog, false, false) end,
             write = function(automatic) self:leaveReply(dialog, true, false, automatic) end,
@@ -288,7 +291,7 @@ function View:tick()
             schedule(self.queue_due)
         end
     end
-    self:showReply(false)
+    if self:showReply(false) then schedule(now + time.s(.5)) end
     if not self.reply_view and self.session.reply and self.reply_after and self.reply_after > now then
         schedule(self.reply_after)
     end

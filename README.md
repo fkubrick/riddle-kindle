@@ -38,13 +38,15 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 ## Ink effects
 
-After queuing, the submitted ink spreads and fades like ink soaking into blotting paper over thirty-five seconds. Network requests continue during this effect. An early reply is received and saved, then shown after absorption finishes. The page otherwise remains blank: there are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
+After queuing, the submitted ink diffuses across the page for forty seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
 
-Replies emerge as small groups of words: diffuse ink gathers into sharp letters, reversing the absorption effect. The renderer supplies word boundaries so the complete layout stays fixed. A reply remains visible for thirty seconds after it has fully appeared, then clears. Swipe left from the right edge to replay it. A draft retained while reading stays intact and does not send when the reply expires automatically; writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
+Ordinary requested replies emerge in small groups of words, from diffuse ink to sharp letters. Their complete layout stays fixed. A reply remains visible for thirty seconds after it has fully appeared, then clears. Swipe left from the right edge to replay it. A draft retained while reading stays intact and does not send when the reply expires; writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 
-**Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. With it enabled, one in four submitted pages is randomly selected for a thirty-five-second burn instead of absorption. The assistant can request an eight-second burn before a reply using `effect: "burn"`; spontaneous messages default to this effect. With burning disabled, all messages use ordinary ink effects.
+Spontaneous replies remain visible until a user gesture or another message replaces them; they do not expire automatically.
 
-The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. Ink absorption uses sixteen shades of gray and partial updates; burning uses fast updates. These effects do not request a full-screen flashing refresh, but actual ghosting and fluidity depend on the device.
+**Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. Burning occurs only when a requested reply arrives with the explicit `effect: "burn"` instruction. Submitted pages are never selected randomly for burning, and spontaneous messages do not burn.
+
+The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. Ink diffusion uses sixteen shades of gray and partial updates; burning uses fast updates. These effects do not request a full-screen flashing refresh, but actual ghosting and fluidity depend on the device.
 
 ## Source layout
 
