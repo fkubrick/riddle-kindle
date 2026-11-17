@@ -38,7 +38,7 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 After a queued page dissolves, the diary can display four prerecorded French phrases. They start after about twelve seconds, write over twenty-eight seconds and linger for eight seconds before the next dissolve. They are local visual effects, never assistant messages or transmitted pages. An actual reply interrupts the sequence. Returning to writing cancels it.
 
-The phrases are “Un instant...”, “La page reste ouverte.”, “L’encre attend la suite.” and “Le silence a aussi son écriture.” The precompiled paths are in `waiting-paths.json`.
+The phrases are “Tes mots ont troublé mon sommeil...”, “Il est des secrets que l’encre seule connaît.”, “Patience... même les ombres ont une mémoire.” and “Approche... quelque chose s’éveille entre les lignes.” The precompiled paths are in `waiting-paths.json`.
 
 ## Source layout
 
