@@ -12,7 +12,7 @@ Return HTTP 200 and `{ "id": "the-same-page-uuid", "status": "pending" }` until 
 
 Omitting `paths` uses the text fallback. The entire response must fit 262,144 bytes. Timestamps prevent older responses arriving later from replacing the newest one.
 
-With `paths`, optional `block_ends` is an array of strictly increasing one-based path indexes. Each index ends a word block; the last must equal the number of paths, with at most 160 blocks. `tools/riddle_paths.py` exposes `reply_layout(text)`, returning `paths` and `block_ends` in groups of about two words. The older `reply_paths(text)` interface remains available. Clients receiving paths without boundaries reveal them as one block.
+With `paths`, optional `block_ends` is an array of strictly increasing one-based path indexes. Each index ends a word block. The last must equal the number of paths, with at most 160 blocks. `tools/riddle_paths.py` exposes `reply_layout(text)`, returning `paths` and `block_ends` in groups of about two words. The older `reply_paths(text)` interface remains available. Older clients can use these boundaries for a staggered reveal. The current Kindle client reveals all paths together.
 
 Optional `effect` is either `"dissolve"` (ordinary ink) or `"burn"` (burn before revealing). The client honors burn only when its private `paper_burn` option is enabled. Persist these fields alongside the reply so retries and replays retain their presentation. The text-only fallback does not support these vector effects.
 

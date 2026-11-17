@@ -1,6 +1,6 @@
 # riddle-kindle
 
-A handwritten diary for jailbroken Kindle readers. Write on the page, watch the ink spread into the paper, and receive a reply emerging in small word blocks. Inspired by [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) and built on [Ink Away](https://github.com/EmirErtorer/ink-away.koplugin) inside KOReader.
+A handwritten diary for jailbroken Kindle readers. Write on the page, watch the ink spread into the paper, and receive a handwritten reply that gradually emerges. Inspired by [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) and built on [Ink Away](https://github.com/EmirErtorer/ink-away.koplugin) inside KOReader.
 
 This is the Kindle client and its handwriting renderer. A compatible HTTPS relay and a separate assistant are required for replies. The relay protocol is documented in [PROTOCOL.md](PROTOCOL.md). The original riddle application targets reMarkable hardware.
 
@@ -40,7 +40,7 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 After queuing, the submitted ink diffuses across the page for seven seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
 
-Ordinary requested replies emerge in small groups of words, from diffuse ink to sharp letters. Their complete layout stays fixed. A reply remains visible for thirty seconds after it has fully appeared, then clears. Swipe left from the right edge to replay it. A draft retained while reading stays intact and does not send when the reply expires; writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
+All words in a handwritten reply emerge together over six seconds, from diffuse ink to sharp letters. Replies to journal pages remain visible for thirty seconds after they have fully appeared, then clear. Swipe left from the right edge to replay the last reply. A draft retained while reading stays intact and does not send when the reply expires. Writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 
 Spontaneous replies remain visible until a user gesture or another message replaces them; they do not expire automatically.
 

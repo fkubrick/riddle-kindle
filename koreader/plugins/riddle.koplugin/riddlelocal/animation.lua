@@ -10,7 +10,7 @@ local Model = require("riddlelocal/model")
 local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
 require("random")
-local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,7,30
+local FRAME, ABSORB_SECONDS, REVEAL_SECONDS, READ_SECONDS = .6,7,6,30
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
@@ -40,7 +40,7 @@ function Animation:init()
         self.phase="absorb"
         self.prepare_absorption=true
     elseif self.paths then
-        self:setReply(self.paths,"local-preview",nil,self.block_ends)
+        self:setReply(self.paths,"local-preview")
     end
 end
 
@@ -62,12 +62,6 @@ end
 
 function Animation:beginReveal()
     self.phase,self.started="reveal",time.now()
-    self.completed=0
-    self.group_plan=nil
-    self.reveal_seconds=math.max(7,#self.groups*2)
-    if self.gather_finished then
-        self.started=self.started-time.s(self.reveal_seconds/#self.groups*.2)
-    end
 end
 
 function Animation:refreshFrame(rect)
@@ -90,7 +84,7 @@ function Animation:startResponse()
                 self:refreshFrame(region)
             end
         end
-        self.wait_drops,self.drop_origins,self.gather_finished=nil,nil,nil
+        self.wait_drops,self.drop_origins=nil,nil
         self.play_burn=false
         self.phase,self.started,self.duration="burn",time.now(),8
         self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
@@ -104,45 +98,28 @@ function Animation:startResponse()
     else self:beginReveal() end
 end
 
-function Animation:setReply(paths,id,effect,block_ends,persistent)
+-- The relay still supplies block boundaries for older clients.
+function Animation:setReply(paths,id,effect,_block_ends,persistent)
     if self.message_id==id then return end
     self.message_id=id
     self.persistent=persistent==true
     self.hide_due=nil
-    self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
-    self.groups={}
-    local first=1
-    for _,last in ipairs(block_ends or {#self.paths}) do
-        local group={}
-        for index=first,last do group[#group+1]=self.paths[index] end
-        self.groups[#self.groups+1]={paths=group,rect=FX.bounds(group,self.w,self.h,self.radius)}
-        first=last+1
-    end
+    local fitted, _, radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
+    self.paths,self.radius=fitted,radius
     self.play_burn=self.paper_burn==true and effect=="burn"
-    self.group_plan=nil
     -- Receive in parallel; present the newest reply after the submitted ink is absorbed.
     if not self.submission_active then
         if self.phase=="waiting" then self:startResponse()
         else
             self.phase,self.started,self.duration="erase",time.now(),.6
             self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,14)
-            self.wait_drops,self.drop_origins,self.gather_finished=nil,nil,nil
+            self.wait_drops,self.drop_origins=nil,nil
             self.erase_stage=-1
             self.ink_plan,self.burn_plan=nil,nil
         end
     end
     UI:unschedule(self.advance)
     UI:scheduleIn(FRAME,self.advance)
-end
-
-local function intersects(a,b)
-    return a.x<b.x+b.w and b.x<a.x+a.w and a.y<b.y+b.h and b.y<a.y+a.h
-end
-function Animation:restoreCompleted(rect)
-    for index=1,self.completed do
-        local group=self.groups[index]
-        if intersects(rect,group.rect) then FX.drawPaths(self.image,group.paths,self.radius,BB.COLOR_BLACK) end
-    end
 end
 
 function Animation:step()
@@ -205,48 +182,32 @@ function Animation:step()
     elseif self.phase=="gather" then
         local progress=math.min(1,elapsed/2)
         local regions=FX.gatherDrops(self.image,self.w,self.h,self.drop_origins,progress,
-            self.wait_drops,colors,self.groups[1].paths)
+            self.wait_drops,colors,self.paths)
         for _,region in ipairs(regions) do self:refreshFrame(region) end
         if progress==1 then
-            self.gather_finished=true
             self:beginReveal()
         end
     elseif self.phase=="reveal" then
-        if self.gather_finished then
+        if self.wait_drops then
             for _,region in ipairs(FX.clearDrops(self.image,self.wait_drops,colors)) do
                 self:refreshFrame(region)
             end
-            self.gather_finished=nil
             self.drop_origins,self.wait_drops=nil,nil
         end
-        local per_group=self.reveal_seconds/#self.groups
-        local complete=math.min(#self.groups,math.floor(elapsed/per_group))
-        while self.completed<complete do
-            if self.group_plan and self.group_plan.rect then
-                local area=self.group_plan.rect
-                self.image:paintRect(area.x,area.y,area.w,area.h,BB.COLOR_WHITE)
-                self:restoreCompleted(area); dirty(area)
-            end
-            self.completed=self.completed+1
-            local group=self.groups[self.completed]
-            FX.drawPaths(self.image,group.paths,self.radius,BB.COLOR_BLACK)
-            dirty(group.rect); self.group_plan=nil
+        if not self.ink_plan then
+            local scratch=BB.new(self.w,self.h,BB.TYPE_BB8)
+            scratch:fill(BB.COLOR_WHITE)
+            FX.drawPaths(scratch,self.paths,self.radius,BB.COLOR_BLACK)
+            local bounds=FX.bounds(self.paths,self.w,self.h,self.radius)
+            self.ink_plan=FX.prepare(scratch,self.w,self.h,bounds)
+            scratch:free()
         end
-        if self.completed==#self.groups then
+        local progress=math.min(1,elapsed/REVEAL_SECONDS)
+        dirty(FX.render(self.image,self.ink_plan,1-progress,colors))
+        if progress==1 then
+            self.ink_plan=nil
             self.phase="reading"
             if not self.persistent then self.hide_due=now+time.s(READ_SECONDS) end
-        else
-            local group=self.groups[self.completed+1]
-            if not self.group_plan then
-                local scratch=BB.new(self.w,self.h,BB.TYPE_BB8)
-                scratch:fill(BB.COLOR_WHITE)
-                FX.drawPaths(scratch,group.paths,self.radius,BB.COLOR_BLACK)
-                self.group_plan=FX.prepare(scratch,self.w,self.h,group.rect)
-                scratch:free()
-            end
-            local progress=(elapsed-self.completed*per_group)/per_group
-            local area=FX.render(self.image,self.group_plan,1-progress,colors)
-            if area then self:restoreCompleted(area); dirty(area) end
         end
     elseif self.phase=="reading" and self.hide_due and now>=self.hide_due then
         self.leave(true,true)
@@ -281,7 +242,7 @@ function Animation:onClose() self.leave(false); return true end
 function Animation:onSetDimensions() self.leave(false); return true end
 function Animation:onCloseWidget()
     self.closed=true; UI:unschedule(self.advance); self.journal_controls:hide()
-    self.ink_plan,self.group_plan,self.burn_plan=nil,nil,nil
+    self.ink_plan,self.burn_plan=nil,nil
     self.image:free(); self.controls:free()
 end
 return Animation

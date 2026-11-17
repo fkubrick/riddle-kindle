@@ -35,7 +35,15 @@ function makeImage(w,h)
             if (x-cx)^2+(y-cy)^2<=r*r then self:setPixel(x,y,color) end
         end end
     end
-    function image:inkCount() local n=0; for y=0,h-1 do for x=0,w-1 do if self.data[y][x]<255 then n=n+1 end end end; return n end
+    function image:inkCount(left,right)
+        local count=0
+        for y=0,h-1 do
+            for x=left or 0,right or w-1 do
+                if self.data[y][x]<255 then count=count+1 end
+            end
+        end
+        return count
+    end
     function image:free() self.freed=true end
     image:fill(255); return image
 end
@@ -74,18 +82,20 @@ a:setReply(paths,'reply-1',nil,{1,2})
 assert(a.phase=='absorb' and a.submission_active,'early reception must not discard submitted ink')
 now=6; a:step(); assert(a.phase=='absorb')
 now=7; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
-assert(frame(a,9)>0 and a.completed==0 and image:inkCount()>0)
-frame(a,11); assert(a.completed==1)
-frame(a,14); assert(a.phase=='reading' and a.hide_due==44)
-now=43; a:step(); assert(automatic==0)
-now=44; a:step(); assert(automatic==1 and write_swipes==1)
+assert(frame(a,9)>0 and a.phase=='reveal')
+assert(image:inkCount(0,59)>0 and image:inkCount(60,119)>0,
+    'both words must emerge in the same frame even when block boundaries are supplied')
+frame(a,12.9); assert(a.phase=='reveal' and not a.hide_due)
+frame(a,13); assert(a.phase=='reading' and a.hide_due==43)
+now=42; a:step(); assert(automatic==0)
+now=43; a:step(); assert(automatic==1 and write_swipes==1)
 local menus=0; a.open_menu=function() menus=menus+1 end
 assert(a:handleEvent({handler='onGesture',args={{ges='swipe',direction='south',pos={x=40,y=3},distance=50}}}))
 assert(menus==1 and a:handleEvent(swipe) and write_swipes==2)
 a:onSuspend(); assert(not scheduled[a.advance]); now=100; a:onResume(); assert(scheduled[a.advance])
 a:onCloseWidget(); assert(image.freed and not scheduled[a.advance])
 
--- A late answer gathers the visible waiting drops before its first word.
+-- A late answer gathers the visible waiting drops before the reply emerges.
 now=0; image=makeImage(120,180); image:paintRect(50,50,3,20,0)
 local empty=Animation:new{image=image,submission=true,leave=function() end}
 top=empty; now=7; empty:step()
@@ -98,6 +108,8 @@ now=37; empty:step(); assert(image:inkCount()==waitingCount)
 empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='gather')
 assert(frame(empty,38)>0)
 frame(empty,39); assert(empty.phase=='reveal')
+frame(empty,41); assert(image:inkCount(0,59)>0 and image:inkCount(60,119)>0)
+frame(empty,45); assert(empty.phase=='reading' and empty.hide_due==75)
 empty:onCloseWidget()
 
 now=0
@@ -105,10 +117,10 @@ local burned=Animation:new{image=makeImage(120,180),paper_burn=true,leave=functi
 top=burned
 burned:setReply(paths,'spontaneous','burn',{1,2},true)
 assert(burned.phase=='burn')
-now=8; burned:step(); now=15; burned:step(); now=160; burned:step()
+now=8; burned:step(); now=14; burned:step(); now=160; burned:step()
 assert(burned.phase=='reading' and not burned.hide_due)
-burned:setReply(paths,'newer',nil,{2}); now=161; burned:step(); now=168; burned:step()
-assert(burned.hide_due==198)
+burned:setReply(paths,'newer',nil,{2}); now=161; burned:step(); now=167; burned:step()
+assert(burned.hide_due==197)
 burned:onCloseWidget()
 local disabled=Animation:new{image=makeImage(120,180),paper_burn=false,leave=function() end}
 disabled:setReply(paths,'no-burn','burn',{2}); assert(disabled.phase=='reveal'); disabled:onCloseWidget()
