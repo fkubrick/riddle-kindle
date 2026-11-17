@@ -34,6 +34,12 @@ Replies replace the previous displayed reply automatically. A reply arriving whi
 
 The user-facing controls are currently French. The plugin receives replies from the configured relay every five seconds when idle. Assistant response latency depends on the external assistant and its notification mechanism.
 
+## Waiting animation
+
+After a queued page dissolves, the diary can display four prerecorded French phrases. They start after about twelve seconds, write over twenty-eight seconds and linger for eight seconds before the next dissolve. They are local visual effects, never assistant messages or transmitted pages. An actual reply interrupts the sequence. Returning to writing cancels it.
+
+The phrases are “Un instant...”, “La page reste ouverte.”, “L’encre attend la suite.” and “Le silence a aussi son écriture.” The precompiled paths are in `waiting-paths.json`.
+
 ## Source layout
 
 `riddle.koplugin` contains journal state, gesture handling, animations and the connector. `ink/alfred` contains the Ink Away bridge. `tools/riddle_paths.py` converts text into trajectories using the included Dancing Script alphabet. Unsupported glyphs can fall back to text rendering in the client.

@@ -88,6 +88,7 @@ function View:animation(snapshot, page_id)
     local dialog
     dialog = require("riddlelocal/animation"):new{
         image = snapshot, ink_y = self.view.area_y, write_label = "Écrire",
+        waiting_paths = page_id and Ink.read("plugins/riddle.koplugin/waiting-paths.json",262144) or nil,
         open_menu = function() self.kui.menu:onShowMenu() end,
         leave = function(write) self:leaveReply(dialog, write, not write) end,
     }

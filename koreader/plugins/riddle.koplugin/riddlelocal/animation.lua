@@ -35,6 +35,7 @@ function Animation:init()
     self.pen_plan,self.pen_distance = Model.penPlan(self.paths,self.radius)
     self.erase_pixels = Model.dissolve(self.image,self.w,self.h,self.ink_y,ERASE_STAGES)
     self.started = time.now()
+    if self.waiting_paths then self.waiting_due=self.started+time.s(ERASE_SECONDS+8) end
     self.stage,self.drawn = -1,0
     self.advance = function() self:step() end
 end
@@ -64,8 +65,19 @@ function Animation:step()
         return
     end
     if self.covered_at then
-        self.started = self.started+time.now()-self.covered_at
+        local pause = time.now()-self.covered_at
+        self.started = self.started+pause
+        if self.waiting_due then self.waiting_due=self.waiting_due+pause end
         self.covered_at = nil
+    end
+    if self.waiting_due and time.now()>=self.waiting_due then
+        self.waiting_index=(self.waiting_index or 0)%#self.waiting_paths+1
+        self.paths,self.total,self.radius=Model.fit(self.waiting_paths[self.waiting_index],self.w,self.h,Screen:scaleBySize(26))
+        self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
+        self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES)
+        self.started,self.stage,self.drawn,self.segment_drawn=time.now(),-1,0,nil
+        self.write_seconds=28
+        self.waiting_due=self.started+time.s(ERASE_SECONDS+self.write_seconds+8)
     end
     local elapsed = time.to_s(time.now()-self.started)
     local x0,y0,x1,y1 = self.w,self.h,-1,-1
@@ -86,7 +98,7 @@ function Animation:step()
         if not self.reply_started then
             self.reply_started = true
         end
-        local progress = math.min(1,(elapsed-ERASE_SECONDS)/WRITE_SECONDS)
+        local progress = math.min(1,(elapsed-ERASE_SECONDS)/(self.write_seconds or WRITE_SECONDS))
         -- Slight acceleration and hesitation, while preserving monotonic motion.
         local target = self.pen_distance*(progress-math.sin(progress*math.pi*8)*.012)
         while self.drawn < #self.pen_plan do
@@ -110,11 +122,16 @@ function Animation:step()
         x0,y0,x1,y1 = math.max(0,x0),math.max(0,y0),math.min(self.w-1,x1),math.min(self.h-1,y1)
         UI:setDirty(self,"fast",Geom:new{x=x0,y=y0,w=x1-x0+1,h=y1-y0+1})
     end
-    if self.drawn<self.total or elapsed<ERASE_SECONDS then UI:scheduleIn(FRAME_SECONDS,self.advance) end
+    if self.waiting_due and self.drawn==self.total and elapsed>=ERASE_SECONDS then
+        UI:scheduleIn(math.max(FRAME_SECONDS,time.to_s(self.waiting_due-time.now())),self.advance)
+    elseif self.drawn<self.total or elapsed<ERASE_SECONDS then
+        UI:scheduleIn(FRAME_SECONDS,self.advance)
+    end
 end
 function Animation:setReply(paths,id)
     if self.message_id==id then return end
     self.message_id=id
+    self.waiting_paths,self.waiting_due,self.write_seconds=nil,nil,nil
     self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
     self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
     self.drawn,self.segment_drawn=0,nil
@@ -139,7 +156,11 @@ function Animation:onSuspend()
     self.journal_controls:hide()
 end
 function Animation:onResume()
-    if self.suspended then self.started=self.started+time.now()-self.suspended end
+    if self.suspended then
+        local pause=time.now()-self.suspended
+        self.started=self.started+pause
+        if self.waiting_due then self.waiting_due=self.waiting_due+pause end
+    end
     self.suspended = nil
     UI:setDirty(self,"ui")
     UI:scheduleIn(FRAME_SECONDS,self.advance)
