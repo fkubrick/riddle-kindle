@@ -94,18 +94,18 @@ top=waiting; waiting:onShow()
 local first_phrase=waiting.waiting_index
 local before_waiting=stamps
 now=3.6; waiting:step(); assert(stamps==before_waiting and not waiting.message_id)
-now=10; waiting:step(); assert(stamps>before_waiting and waiting.drawn<waiting.total)
-now=14; waiting:step(); assert(waiting.drawn==waiting.total and not waiting.burning)
-assert(waiting.waiting_due>17 and waiting.waiting_due<18)
+now=18; waiting:step(); assert(stamps>before_waiting and waiting.drawn<waiting.total)
+now=22; waiting:step(); assert(waiting.drawn==waiting.total and not waiting.burning)
+assert(waiting.waiting_due==30)
 local due=waiting.waiting_due
 waiting:onSuspend(); now=50; waiting:onResume()
-assert(waiting.waiting_due==due+36)
+assert(waiting.waiting_due==due+28)
 now=waiting.waiting_due+.1; waiting:step(); assert(waiting.waiting_index~=first_phrase and waiting.burning)
 image:fill(0)
-now=waiting.started+3; waiting:step()
+now=waiting.started+15; waiting:step()
 assert(black()>0 and black()<120*180, 'burn must consume part of the page')
 waiting:setReply({{{1,1},{3,5},{9,2}}},"actual-reply")
-assert(not waiting.waiting_due and not waiting.waiting_paths and not waiting.burning and waiting.message_id=="actual-reply")
+assert(not waiting.waiting_due and not waiting.waiting_paths and not waiting.burning and not waiting.burn_plan and waiting.message_id=="actual-reply")
 now=now+25; waiting:step()
 assert(waiting.drawn==waiting.total)
 waiting:onCloseWidget()
@@ -117,20 +117,57 @@ for index=1,12 do
     if (index-1)%4==0 then seen={} end
     image:fill(255)
     local dialog=Animation:new{image=image,ink_y=0,waiting_paths=catalogue,leave=function() end}
-    top=dialog; now=dialog.started+14; dialog:step()
+    top=dialog; now=dialog.started+22; dialog:step()
     assert(dialog.drawn==dialog.total)
     assert(not seen[dialog.waiting_index] and dialog.waiting_index~=previous)
     seen[dialog.waiting_index],previous=true,dialog.waiting_index
     dialog:onCloseWidget()
 end
 
--- The burn completely clears its trailing ash, including a skipped final frame.
+-- A full sequence completes one phrase and burn in a minute, then repeats.
+now=0; image:fill(255)
+local cycle=Animation:new{image=image,ink_y=0,waiting_paths=catalogue,leave=function() end}
+top=cycle
+now=22; cycle:step(); assert(cycle.drawn==cycle.total and not cycle.burning)
+now=30; cycle:step(); assert(cycle.burning and cycle.burn_plan and cycle.waiting_due==90)
+now=59; cycle:step(); assert(cycle.burn_progress<1 and cycle.drawn==0)
+now=60; cycle:step(); assert(cycle.burn_progress==1 and not cycle.burn_plan and black()==0)
+now=78; cycle:step(); assert(cycle.drawn==cycle.total)
+now=90; cycle:step(); assert(cycle.burn_plan and cycle.waiting_due==150)
+now=120; cycle:step(); assert(cycle.burn_progress==1 and black()==0)
+cycle:onCloseWidget()
+
+-- Several separate holes form, then merge and clear completely, even on skips.
 local Model=require('riddlelocal/model')
+local burn_plan=Model.burnPlan(120,180,3)
 image:fill(0)
 local progress=0
-for _,next_progress in ipairs{.1,.25,.5,.72,1} do
-    local region=Model.burn(image,120,180,next_progress,progress,255,0)
+local function whiteIslands()
+    local seen,count={},0
+    for y=0,179 do for x=0,119 do
+        local key=y*120+x
+        if pixels[y][x]==255 and not seen[key] then
+            count=count+1
+            local queue={key}; seen[key]=true
+            while #queue>0 do
+                local item=table.remove(queue)
+                local cx,cy=item%120,math.floor(item/120)
+                for _,delta in ipairs{{1,0},{-1,0},{0,1},{0,-1}} do
+                    local nx,ny=cx+delta[1],cy+delta[2]
+                    local next_key=ny*120+nx
+                    if nx>=0 and nx<120 and ny>=0 and ny<180 and pixels[ny][nx]==255 and not seen[next_key] then
+                        seen[next_key]=true; queue[#queue+1]=next_key
+                    end
+                end
+            end
+        end
+    end end
+    return count
+end
+for _,next_progress in ipairs{.15,.25,.5,.72,1} do
+    local region=Model.burn(image,burn_plan,next_progress,progress,255,0)
     assert(region.y>=0 and region.y+region.h<=180)
+    if next_progress==.15 then assert(whiteIslands()>=3,'burn should open several independent holes') end
     progress=next_progress
 end
 assert(black()==0,'burn left ash on the final blank page')

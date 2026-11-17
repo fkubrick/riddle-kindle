@@ -36,7 +36,9 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 ## Waiting animation
 
-After a queued page dissolves, the diary can display twenty-four prerecorded French phrases. The first starts as soon as the initial dissolve ends, about four seconds after the page is queued. It writes over ten seconds and lingers for four seconds. The first paper burn therefore starts around eighteen seconds and ends around twenty-four seconds. Between phrases, a monochrome charred edge travels up the page over six seconds, leaving white paper behind. Only the swept strip is refreshed. This experimental effect needs feedback on the physical display.
+After a queued page dissolves, the diary can display twenty-four prerecorded French phrases. A phrase and its burn occupy about sixty seconds. The first starts as soon as the initial dissolve ends, about four seconds after the page is queued, and finishes writing around twenty-two seconds. The burn runs from thirty to sixty seconds: scattered holes open with irregular blackened edges, grow and merge until the page is white. The following phrase starts a new one-minute cycle.
+
+The hole pattern varies with the selected phrase. Its growth is computed once per burn; each small patch is painted at most twice, first black and then white, without requesting a flashing full refresh. This experimental effect needs feedback on the physical display.
 
 The phrases are shuffled without repeats until the full collection has been shown, with no immediate repeat across shuffles. Reopening the journal continues the collection within the same KOReader session; restarting KOReader starts a new shuffle. These are local visual effects, never assistant messages or transmitted pages. An actual reply interrupts the sequence, including the burning effect. Returning to writing cancels it.
 

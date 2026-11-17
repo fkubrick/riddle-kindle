@@ -31,34 +31,68 @@ function M.dissolve(image, w, h, top, stages)
     return buckets
 end
 
--- A monochrome charred edge travels upward. Only its swept strip is repainted.
-function M.burn(image, w, h, progress, previous, white, black)
-    local grain = math.max(2, math.floor(w/270))
-    local band = math.max(3, math.floor(h*.009))
-    local amplitude = math.max(6, math.floor(h*.035))
-    local y0,y1 = h,0
-    for x=0,w-1,grain do
-        local noise = amplitude*(.55*math.sin(x/31)+.25*math.sin(x/9)+
-            .2*(M.bucket(math.floor(x/grain),0,101)/50-1))
-        local function edge(at)
-            return math.floor(h+amplitude-(h+2*amplitude+band*3+grain)*at+noise)
-        end
-        local front,old = edge(progress),edge(previous)
-        local top,bottom = math.max(0,front),math.min(h,old+band*3+grain)
-        local width = math.min(grain,w-x)
-        if bottom>top then
-            image:paintRect(x,top,width,bottom-top,white)
-            local end_black = math.min(h,front+band)
-            if end_black>top then image:paintRect(x,top,width,end_black-top,black) end
-            for y=math.max(0,front+band),math.min(h-1,front+band*3),grain do
-                if M.bucket(x,y,5)==0 then
-                    image:paintRect(x,y,width,math.min(grain,h-y),black)
-                end
+-- Precompute when each small patch chars. Several uneven holes grow and merge;
+-- the earliest arrival wins, so overlapping holes never redraw their interiors.
+function M.burnPlan(w, h, seed)
+    local plan = {w=w,h=h,grain=math.max(2,math.floor(w/268)),stages=120,rim=3}
+    local sites = {{.22,.20,0},{.72,.12,.04},{.50,.43,.02},
+        {.13,.65,.06},{.84,.58,.08},{.43,.88,.03},{.86,.91,.10}}
+    local unit = math.min(w,h)
+    for index,site in ipairs(sites) do
+        site[1]=(site[1]+(M.bucket(index,seed,101)/100-.5)*.08)*w
+        site[2]=(site[2]+(M.bucket(seed,index,101)/100-.5)*.08)*h
+        site[4]=.85+M.bucket(index+7,seed,101)/100*.3
+    end
+    local values,maximum = {},0
+    for y=0,h-1,plan.grain do
+        for x=0,w-1,plan.grain do
+            local nearest=math.huge
+            for _,site in ipairs(sites) do
+                local dx,dy=(x-site[1])/unit/site[4],(y-site[2])/unit*site[4]
+                nearest=math.min(nearest,site[3]+math.sqrt(dx*dx+dy*dy))
             end
-            y0,y1 = math.min(y0,top),math.max(y1,bottom)
+            local warp=(math.sin(x/unit*29+seed)+math.sin(y/unit*25)+
+                .6*math.sin((x+y)/unit*51))*.009
+            local rough=(M.bucket(x,y,101)/100-.5)*.008
+            local arrival=math.max(.005,nearest+warp+rough)
+            values[#values+1]=arrival
+            maximum=math.max(maximum,arrival)
         end
     end
-    if y1>y0 then return {x=0,y=y0,w=w,h=y1-y0} end
+    for stage=1,plan.stages do plan[stage]={} end
+    local index=0
+    for y=0,h-1,plan.grain do
+        for x=0,w-1,plan.grain do
+            index=index+1
+            local stage=1+math.floor(values[index]/maximum*(plan.stages-plan.rim-1))
+            local bucket=plan[stage]
+            bucket[#bucket+1]=y*w+x
+        end
+    end
+    return plan
+end
+
+-- Each patch is painted at most twice: its black rim, then its white interior.
+-- Skipped frames go straight to the current frontier without leaving old rims.
+function M.burn(image, plan, progress, previous, white, black)
+    local current=math.min(plan.stages,math.floor(progress*plan.stages))
+    local old=math.floor(previous*plan.stages)
+    if current<=old then return end
+    local w,h,grain=plan.w,plan.h,plan.grain
+    local x0,y0,x1,y1=w,h,0,0
+    local function paint(first,last,color)
+        for stage=first,last do
+            for _,pixel in ipairs(plan[stage]) do
+                local x,y=pixel%w,math.floor(pixel/w)
+                local width,height=math.min(grain,w-x),math.min(grain,h-y)
+                image:paintRect(x,y,width,height,color)
+                x0,y0,x1,y1=math.min(x0,x),math.min(y0,y),math.max(x1,x+width),math.max(y1,y+height)
+            end
+        end
+    end
+    paint(math.max(1,old-plan.rim+1),math.max(0,current-plan.rim),white)
+    paint(math.max(old+1,current-plan.rim+1),current,black)
+    if x1>x0 then return {x=x0,y=y0,w=x1-x0,h=y1-y0} end
 end
 
 -- Time follows pen travel, including short lifts between disconnected strokes.

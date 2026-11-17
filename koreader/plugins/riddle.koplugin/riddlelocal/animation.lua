@@ -12,7 +12,7 @@ local Animation = Input:extend{
     modal = true, covers_fullscreen = true, stop_events_propagation = true, disable_double_tap = true,
 }
 local ERASE_SECONDS, WRITE_SECONDS, FRAME_SECONDS = 3.8, 18, .18
-local WAIT_WRITE_SECONDS, WAIT_HOLD_SECONDS = 10, 4
+local WAIT_WRITE_SECONDS, WAIT_BURN_SECONDS, WAIT_CYCLE_SECONDS = 18, 30, 60
 local ERASE_STAGES = 14
 require("random") -- KOReader seeds math.random once per process.
 local waiting_order, waiting_count, last_waiting = {},0,nil
@@ -60,7 +60,7 @@ function Animation:init()
     self.erase_pixels = Model.dissolve(self.image,self.w,self.h,self.ink_y,ERASE_STAGES)
     self.started = time.now()
     if self.waiting_paths then
-        self.waiting_due=self.started+time.s(ERASE_SECONDS+WAIT_WRITE_SECONDS+WAIT_HOLD_SECONDS)
+        self.waiting_due=self.started+time.s(WAIT_CYCLE_SECONDS-WAIT_BURN_SECONDS)
     end
     self.stage,self.drawn = -1,0
     self.advance = function() self:step() end
@@ -97,16 +97,17 @@ function Animation:step()
         self.covered_at = nil
     end
     if self.waiting_due and time.now()>=self.waiting_due then
-        self.burning=self.waiting_index~=nil
+        self.burning=true
         self.burn_progress=0
-        self.erase_seconds=self.burning and 6 or ERASE_SECONDS
+        self.burn_plan=Model.burnPlan(self.w,self.h,self.waiting_index)
+        self.erase_seconds=WAIT_BURN_SECONDS
         self.waiting_index=nextWaiting(#self.waiting_paths)
         self.paths,self.total,self.radius=Model.fit(self.waiting_paths[self.waiting_index],self.w,self.h,Screen:scaleBySize(26))
         self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
-        if not self.burning then self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES) end
+        self.erase_pixels=nil
         self.started,self.stage,self.drawn,self.segment_drawn=time.now(),-1,0,nil
         self.write_seconds=WAIT_WRITE_SECONDS
-        self.waiting_due=self.started+time.s(self.erase_seconds+self.write_seconds+WAIT_HOLD_SECONDS)
+        self.waiting_due=self.started+time.s(WAIT_CYCLE_SECONDS)
     end
     local elapsed = time.to_s(time.now()-self.started)
     local erase_seconds = self.erase_seconds or ERASE_SECONDS
@@ -118,12 +119,13 @@ function Animation:step()
     if self.burning then
         local progress=math.min(1,elapsed/erase_seconds)
         if progress>self.burn_progress then
-            local rect=Model.burn(self.image,self.w,self.h,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK)
+            local rect=Model.burn(self.image,self.burn_plan,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK)
             if rect then
                 dirty(rect.x,rect.y,0)
                 dirty(rect.x+rect.w-1,rect.y+rect.h-1,0)
             end
             self.burn_progress=progress
+            if progress==1 then self.burn_plan=nil end
         end
     else
         local stage = math.min(ERASE_STAGES-1,math.floor(elapsed/erase_seconds*ERASE_STAGES))
@@ -181,7 +183,7 @@ function Animation:setReply(paths,id)
         self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES)
         self.started,self.stage,self.reply_started=time.now(),-1,nil
     end
-    self.burning,self.erase_seconds=nil,nil
+    self.burning,self.burn_plan,self.erase_seconds=nil,nil,nil
     self.covered_at=nil
     UI:unschedule(self.advance)
     UI:scheduleIn(FRAME_SECONDS,self.advance)
