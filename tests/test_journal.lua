@@ -57,9 +57,12 @@ assert(saved_effect.reply.effect=="burn" and saved_effect.reply.block_ends[1]==1
 View.extend=function(self,o) return setmetatable(o,{__index=self}) end
 Reply.extend=View.extend
 LiveNet.start=Net.start
+local BB=package.loaded['ffi/blitbuffer']
+BB.COLOR_WHITE,BB.COLOR_BLACK=255,0
 local Online=require("riddlelocal/online")
-local buffer={fill=function() end,paintRect=function() end,free=function(self) self.freed=true end}
-local BB=package.loaded['ffi/blitbuffer']; BB.new=function() return buffer end
+local buffer={fill=function() end,paintRect=function() end,free=function(self) self.freed=true end,
+    getPixel=function() return {getColor8=function() return {a=255} end} end}
+BB.new=function() return buffer end
 local fail_write = false
 OnlineState.write = function(path,state)
     if fail_write then return false end
@@ -69,6 +72,7 @@ end
 local function online(session)
     local o = view(session or OnlineState.new())
     setmetatable(o,{__index=Online})
+    o:openStartDocument()
     o.view = {area_y=80}
     o.paintTo = function() end
     o.installRawFinger,o.uninstallRawFinger = function() end,function() end
@@ -81,8 +85,8 @@ local function online(session)
         local dialog
         dialog = {
             page_id = page_id,
-            setReply = function(d,paths,mid,_,_,persistent)
-                d.message_id,d.paths,d.persistent = mid,paths,persistent
+            setReply = function(d,paths,mid,_,_,persistent,scene)
+                d.message_id,d.paths,d.persistent,d.scene = mid,paths,persistent,scene
             end,
             onCloseWidget = function() end,
             write = function() self:leaveReply(dialog,true,false) end,
@@ -248,6 +252,31 @@ addStroke(o); assert(not o.hold_draft)
 advance(now+5); assert(#o.session.outbox==1)
 o:stopConnector()
 
+-- Closing with an unfinished drawing restores it without an automatic send.
+o=online()
+o.onCloseWidget=function(self) self:stopConnector() end
+addStroke(o)
+o.journal_controls={visible=true}
+advance(now+6)
+assert(#disk.draft==1 and #disk.outbox==0)
+o:closeCanvas()
+o=online(assert(OnlineState.load(disk)))
+assert(o.hold_draft and #o.canvas.ops==1)
+o:wake(1)
+advance(now+15)
+assert(#disk.draft==1 and #disk.outbox==0, "reopening must not send the saved drawing")
+addStroke(o)
+assert(not o.hold_draft and #disk.draft==2)
+o:stopConnector()
+
+o=online()
+o.session.reply={id=id,message_id=msg,text="[[scene]] Non, || mais je peux te montrer"}
+o:showReply(false)
+assert(o.reply_view.scene[1]=="Non," and o.reply_view.scene[2]=="mais je peux te montrer")
+assert(not require("riddlelocal/reply").scene("Le symbole || est ordinaire"))
+o.reply_view.write()
+o:stopConnector()
+
 o = online()
 o.session.reply = answer(spont,spont).reply
 o:showReply(false)
@@ -277,7 +306,16 @@ o:stopConnector()
 o = online()
 o.session.reply = { id=id, message_id=msg, text="Réponse" }
 o:showReply(false)
-assert(o.reply_view.expire and not o.reply_view.persistent)
-advance(now+31)
+local text_reply=o.reply_view
+assert(text_reply.expire and not text_reply.persistent)
+advance(now+.6)
+assert(text_reply.box)
+text_reply.box.paintTo=function() end
+advance(text_reply.hide_due)
+assert(foreground==text_reply and text_reply.fade_image)
+local done=text_reply.hide_due
+advance(done-.5)
+assert(foreground==text_reply)
+advance(done)
 assert(foreground == o and disk.last_reply.message_id == msg)
 o:stopConnector()

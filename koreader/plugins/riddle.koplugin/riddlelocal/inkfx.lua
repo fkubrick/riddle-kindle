@@ -1,6 +1,7 @@
 -- Spatial dithering keeps animation frames black and white for the fast waveform.
 local Model = require("riddlelocal/model")
 local FX = {}
+FX.REPLY_FADE_SECONDS = 4
 local bayer = {
      0,  8,  2, 10,
     12,  4, 14,  6,
@@ -10,6 +11,14 @@ local bayer = {
 
 local function threshold(x,y)
     return (bayer[1+(y%4)*4+x%4]+.5)/16
+end
+
+function FX.fastRefreshRegion(rect,width,bottom)
+    if not rect or rect.y>=bottom then return end
+    -- The Kindle driver drops refreshes narrower or shorter than two pixels.
+    local x=math.min(rect.x,width-2)
+    local y=math.min(rect.y,bottom-2)
+    return {x=x,y=y,w=math.max(2,rect.x+rect.w-x),h=math.max(2,math.min(bottom,rect.y+rect.h)-y)}
 end
 
 function FX.drawPaths(image,paths,radius,black)

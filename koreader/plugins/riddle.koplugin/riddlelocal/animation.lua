@@ -11,6 +11,7 @@ local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
 require("random")
 local FRAME, ABSORB_SECONDS, REVEAL_SECONDS, READ_SECONDS = .6,7,6,30
+local SCENE_REVEAL_SECONDS, SCENE_HOLD_SECONDS, SCENE_FADE_SECONDS = 1.2,3,3
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
@@ -64,16 +65,14 @@ function Animation:beginReveal()
     self.phase,self.started="reveal",time.now()
 end
 
+function Animation:hasMoreFragments()
+    return self.scene and self.fragment<#self.scene
+end
+
 function Animation:refreshFrame(rect)
     local bottom=self.journal_controls.visible and self.bottom or self.h
-    if rect.y>=bottom then return end
-    -- DU is KOReader's fast monochrome waveform on the Paperwhite 3.
-    -- Its driver drops updates narrower or shorter than two pixels.
-    local x=math.min(rect.x,self.w-2)
-    local y=math.min(rect.y,bottom-2)
-    UI:setDirty(self,"fast",Geom:new{
-        x=x,y=y,w=math.max(2,rect.x+rect.w-x),h=math.max(2,math.min(bottom,rect.y+rect.h)-y),
-    })
+    local region=FX.fastRefreshRegion(rect,self.w,bottom)
+    if region then UI:setDirty(self,"fast",Geom:new(region)) end
 end
 
 function Animation:startResponse()
@@ -89,7 +88,7 @@ function Animation:startResponse()
         self.phase,self.started,self.duration="burn",time.now(),8
         self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
         self.burn_progress=0
-    elseif self.wait_drops and next(self.wait_drops) then
+    elseif self.paths and self.wait_drops and next(self.wait_drops) then
         self.phase,self.started="gather",time.now()
         self.drop_origins={}
         for index,drop in ipairs(self.wait_drops) do
@@ -99,13 +98,17 @@ function Animation:startResponse()
 end
 
 -- The relay still supplies block boundaries for older clients.
-function Animation:setReply(paths,id,effect,_block_ends,persistent)
+function Animation:setReply(paths,id,effect,_block_ends,persistent,scene)
     if self.message_id==id then return end
     self.message_id=id
     self.persistent=persistent==true
     self.hide_due=nil
-    local fitted, _, radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
-    self.paths,self.radius=fitted,radius
+    self.scene,self.fragment=scene,1
+    self.paths,self.radius=nil,nil
+    if not scene then
+        local fitted, _, radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
+        self.paths,self.radius=fitted,radius
+    end
     self.play_burn=self.paper_burn==true and effect=="burn"
     -- Receive in parallel; present the newest reply after the submitted ink is absorbed.
     if not self.submission_active then
@@ -145,10 +148,10 @@ function Animation:step()
         rect={x=x,y=y,w=math.max(rect.x+rect.w,region.x+region.w)-x,
             h=math.max(rect.y+rect.h,region.y+region.h)-y}
     end
-    if self.phase=="absorb" or self.phase=="burn" or self.phase=="erase" then
+    if self.phase=="absorb" or self.phase=="fade" or self.phase=="burn" or self.phase=="erase" then
         local phase=self.phase
         local progress=math.min(1,elapsed/self.duration)
-        if phase=="absorb" then
+        if phase=="absorb" or phase=="fade" then
             if self.prepare_absorption then
                 self.ink_plan=FX.prepare(self.image,self.w,self.h,
                     {x=0,y=self.ink_y or 0,w=self.w,h=self.h-(self.ink_y or 0)})
@@ -168,7 +171,17 @@ function Animation:step()
         end
         if progress==1 then
             self.ink_plan,self.burn_plan,self.erase_pixels=nil,nil,nil
-            if self.submission_active then
+            if phase=="fade" then
+                if self:hasMoreFragments() then
+                    self.fragment=self.fragment+1
+                    self:beginReveal()
+                else
+                    self.phase="reading"
+                    if rect then self:refreshFrame(rect) end
+                    self.leave(true,true)
+                    return
+                end
+            elseif self.submission_active then
                 self.submission_active=false
                 self.phase="waiting"
                 self:startResponse()
@@ -197,25 +210,40 @@ function Animation:step()
         if not self.ink_plan then
             local scratch=BB.new(self.w,self.h,BB.TYPE_BB8)
             scratch:fill(BB.COLOR_WHITE)
-            FX.drawPaths(scratch,self.paths,self.radius,BB.COLOR_BLACK)
-            local bounds=FX.bounds(self.paths,self.w,self.h,self.radius)
-            self.ink_plan=FX.prepare(scratch,self.w,self.h,bounds)
+            if self.scene then
+                self.reply_bounds=require("riddlelocal/reply").drawSceneFragment(
+                    scratch,self.w,self.h,self.scene[self.fragment])
+            else
+                FX.drawPaths(scratch,self.paths,self.radius,BB.COLOR_BLACK)
+                self.reply_bounds=FX.bounds(self.paths,self.w,self.h,self.radius)
+            end
+            self.ink_plan=FX.prepare(scratch,self.w,self.h,self.reply_bounds)
             scratch:free()
         end
-        local progress=math.min(1,elapsed/REVEAL_SECONDS)
+        local duration=self:hasMoreFragments() and SCENE_REVEAL_SECONDS or REVEAL_SECONDS
+        local progress=math.min(1,elapsed/duration)
         dirty(FX.render(self.image,self.ink_plan,1-progress,colors))
         if progress==1 then
             self.ink_plan=nil
             self.phase="reading"
-            if not self.persistent then self.hide_due=now+time.s(READ_SECONDS) end
+            if self:hasMoreFragments() then
+                self.hide_due=now+time.s(SCENE_HOLD_SECONDS)
+            elseif not self.persistent then
+                self.hide_due=now+time.s(READ_SECONDS)
+            end
         end
     elseif self.phase=="reading" and self.hide_due and now>=self.hide_due then
-        self.leave(true,true)
-        return
+        self.ink_plan=FX.prepare(self.image,self.w,self.h,self.reply_bounds)
+        self.phase,self.started="fade",time.now()
+        self.duration=self:hasMoreFragments() and SCENE_FADE_SECONDS or FX.REPLY_FADE_SECONDS
+        self.hide_due=nil
     end
     if rect then self:refreshFrame(rect) end
     if self.phase=="reading" then
         if self.hide_due then UI:scheduleIn(math.max(FRAME,time.to_s(self.hide_due-now)),self.advance) end
+    elseif self.phase=="fade" then
+        local remaining=time.to_s(self.started+time.s(self.duration)-time.now())
+        UI:scheduleIn(math.max(0,math.min(FRAME,remaining)),self.advance)
     elseif self.phase~="waiting" or self.wait_drops then UI:scheduleIn(FRAME,self.advance) end
 end
 

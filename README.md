@@ -6,7 +6,7 @@ This is the Kindle client and its handwriting renderer. A compatible HTTPS relay
 
 ## Status
 
-Writing, persisted outgoing pages, connected replies, draft preservation, swipe navigation and burning holes have been used on a jailbroken Kindle Paperwhite 3 running firmware 5.12.4. The new ink absorption, block reveal and automatic reply expiry have passed local LuaJIT checks; their appearance and timing on the physical display still need confirmation. Other devices are untested.
+Writing, persisted outgoing pages, connected replies, swipe navigation, burning holes and the simultaneous ink reveal have been used on a jailbroken Kindle Paperwhite 3 running firmware 5.12.4. The four-second reply fade, scenes and restored-draft behavior have passed local tests. Other devices are untested.
 
 The ink renderer is experimental. E-ink refresh modes can leave ghosting and the physical display cadence varies. The plugin keeps the reader awake while open, which increases power use.
 
@@ -30,7 +30,7 @@ Keep this configuration file private. The client is configured with your relayâ€
 - Tap to reveal the bottom fallback controls, which hide after five seconds. Reading offers Fermer / Ã‰crire. Writing offers Fermer.
 - Hold for at least 350 ms to place an intentional ink dot.
 
-Replies replace the previous displayed reply automatically. A reply arriving while you write waits while your draft is preserved. Unsent pages survive closing and reopening. Up to eight queued pages/replies are retained, with the active draft kept when the queue is full.
+Replies replace the previous displayed reply automatically. A reply arriving while you write waits while your draft is preserved. Closing and reopening restores your unfinished drawing. The next stroke restarts the five-second send timer. Up to eight queued pages/replies are retained, with the active draft kept when the queue is full.
 
 If the main journal state is empty or missing after an interrupted save, opening the journal can recover a fully validated pending `.part` file. A valid main state always takes precedence. Nonempty damaged files and incomplete pending writes are left untouched for manual recovery.
 
@@ -40,9 +40,11 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 After queuing, the submitted ink diffuses across the page for seven seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
 
-All words in a handwritten reply emerge together over six seconds, from diffuse ink to sharp letters. Replies to journal pages remain visible for thirty seconds after they have fully appeared, then clear. Swipe left from the right edge to replay the last reply. A draft retained while reading stays intact and does not send when the reply expires. Writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
+All words in a handwritten reply emerge together over six seconds, from diffuse ink to sharp letters. Replies to journal pages remain visible for thirty seconds after they have fully appeared, then the ink disperses over four seconds. Swipe left from the right edge to replay the last reply. A draft retained while reading stays intact and does not send when the reply expires. Writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 
 Spontaneous replies remain visible until a user gesture or another message replaces them; they do not expire automatically.
+
+To stage an occasional dramatic pause, send a reply such as `[[scene]] No, || but I can show you` in the usual reply field. Each fragment before the last remains readable for three seconds and dissolves over three seconds. The final fragment follows the normal reply timing.
 
 **Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. Burning occurs only when a requested reply arrives with the explicit `effect: "burn"` instruction. Submitted pages are never selected randomly for burning, and spontaneous messages do not burn.
 

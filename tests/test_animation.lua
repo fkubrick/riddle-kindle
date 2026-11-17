@@ -87,8 +87,12 @@ assert(image:inkCount(0,59)>0 and image:inkCount(60,119)>0,
     'both words must emerge in the same frame even when block boundaries are supplied')
 frame(a,12.9); assert(a.phase=='reveal' and not a.hide_due)
 frame(a,13); assert(a.phase=='reading' and a.hide_due==43)
+local readingInk=image:inkCount()
 now=42; a:step(); assert(automatic==0)
-now=43; a:step(); assert(automatic==1 and write_swipes==1)
+frame(a,43); assert(a.phase=='fade' and automatic==0 and image:inkCount()==readingInk)
+frame(a,45); assert(automatic==0 and image:inkCount()>0 and image:inkCount()<readingInk)
+frame(a,46.8); assert(scheduled[a.advance]==47 and automatic==0)
+frame(a,47); assert(automatic==1 and write_swipes==1 and image:inkCount()==0)
 local menus=0; a.open_menu=function() menus=menus+1 end
 assert(a:handleEvent({handler='onGesture',args={{ges='swipe',direction='south',pos={x=40,y=3},distance=50}}}))
 assert(menus==1 and a:handleEvent(swipe) and write_swipes==2)
@@ -124,6 +128,26 @@ assert(burned.hide_due==197)
 burned:onCloseWidget()
 local disabled=Animation:new{image=makeImage(120,180),paper_burn=false,leave=function() end}
 disabled:setReply(paths,'no-burn','burn',{2}); assert(disabled.phase=='reveal'); disabled:onCloseWidget()
+
+-- A scene holds its first text and lets it disperse before rendering the next.
+local fragments={"Non,","mais je peux te montrer"}
+stub("riddlelocal/reply",{drawSceneFragment=function(target,w,h,fragment)
+    local x=fragment==fragments[1] and 20 or 75
+    target:paintRect(x,60,15,20,0)
+    return {x=0,y=0,w=w,h=h}
+end})
+now=0; image=makeImage(120,180)
+local scene=Animation:new{image=image,leave=function() error("scene dismissed prematurely") end}
+top=scene
+scene:setReply(nil,'scene',nil,nil,false,fragments)
+frame(scene,2); assert(scene.hide_due==5 and image:inkCount(0,59)>0)
+frame(scene,5); assert(scene.phase=='fade' and scene.duration==3)
+frame(scene,6.5); assert(image:inkCount(0,59)>0 and image:inkCount(60,119)==0)
+frame(scene,8); assert(scene.fragment==2 and scene.phase=='reveal' and image:inkCount()==0)
+frame(scene,10); assert(image:inkCount(0,59)==0 and image:inkCount(60,119)>0)
+frame(scene,14); assert(scene.hide_due==44)
+scene:onCloseWidget()
+package.loaded["riddlelocal/reply"]=nil
 
 for _,update in ipairs(refreshes) do
     assert(update.mode~='full' and update.mode~='flashui' and update.mode~='flashpartial')

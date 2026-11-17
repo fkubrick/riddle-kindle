@@ -18,6 +18,11 @@ local function copy(items)
     return result
 end
 
+function View:openStartDocument()
+    Base.openStartDocument(self)
+    self.hold_draft = #self.session.draft > 0
+end
+
 function View:statusText()
     if self.storage_error then return "Sauvegarde indisponible" end
     if self.oversize then return "Page trop longue" end
@@ -72,7 +77,7 @@ function View:leaveReply(dialog, write, close_canvas, automatic)
     if write then
         self.quiet_after = time.now() + time.s(QUIET)
         self.reply_after = self.quiet_after
-        self.hold_draft=automatic==true and #self.session.draft>0 or false
+        self.hold_draft = #self.session.draft > 0 and (self.hold_draft or automatic == true)
     end
     self:wake(0)
 end
@@ -148,7 +153,8 @@ function View:showReply(manual)
         if not self:saveDraft() then return end
     end
     local persistent = reply.id == reply.message_id
-    if reply.paths then
+    local scene = Reply.scene(reply.text)
+    if reply.paths or scene then
         if dialog and not dialog.setReply then
             UI:close(dialog)
             self.reply_view, dialog = nil, nil
@@ -158,7 +164,7 @@ function View:showReply(manual)
             blank:fill(BB.COLOR_WHITE)
             dialog = self:animation(blank)
         end
-        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends, persistent)
+        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends, persistent, scene)
     else
         if dialog and dialog.submission_active then return true end
         if dialog then
@@ -284,6 +290,9 @@ function View:tick()
             State.size(self.session) + reserved < State.capacity then
         local due = self.quiet_after
         if self.queue_due and self.queue_due > due then due = self.queue_due end
+        if self.journal_controls and self.journal_controls.visible then
+            due = math.max(due, now + time.s(.5))
+        end
         if due > now then
             schedule(due)
         elseif not self:queue() and not self.oversize then

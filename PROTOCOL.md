@@ -14,6 +14,8 @@ Omitting `paths` uses the text fallback. The entire response must fit 262,144 by
 
 With `paths`, optional `block_ends` is an array of strictly increasing one-based path indexes. Each index ends a word block. The last must equal the number of paths, with at most 160 blocks. `tools/riddle_paths.py` exposes `reply_layout(text)`, returning `paths` and `block_ends` in groups of about two words. The older `reply_paths(text)` interface remains available. Older clients can use these boundaries for a staggered reveal. The current Kindle client reveals all paths together.
 
+For an optional scene, use `[[scene]]` at the start of `text`, followed by two or more nonempty fragments separated by `||`. The relay passes the text through its usual reply endpoint. The Kindle renders the fragments locally. Each fragment before the last is held for three seconds and fades for three seconds. The final fragment follows the usual reading and expiry rules.
+
 Optional `effect` is either `"dissolve"` (ordinary ink) or `"burn"` (burn before revealing). The client honors burn only when its private `paper_burn` option is enabled. Persist these fields alongside the reply so retries and replays retain their presentation. The text-only fallback does not support these vector effects.
 
 Without `id`, the same endpoint represents the spontaneous-message mailbox. A ready spontaneous message has `id` equal to `message_id` and no `reply_to`. A page-specific message in the mailbox with `reply_to` is ignored there and fetched through its page ID. An empty mailbox returns `{ "status": "pending" }`.
