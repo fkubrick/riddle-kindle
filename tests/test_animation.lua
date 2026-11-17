@@ -6,6 +6,8 @@ local UI = {setDirty=function(_,_,mode) refreshes[#refreshes+1]=mode end,
     getTopmostVisibleWidget=function() return top end}
 local function stub(n,v) package.loaded[n]=v end
 stub("ui/uimanager",UI)
+stub("random",{})
+math.randomseed(123)
 stub("ui/time",{now=function() return now end,to_s=function(v) return v end,s=function(v) return v end})
 local gd={ feedEvent=function() end, getContact=function() end }
 stub("device",{hasKeys=function() return true end,input={group={Back="Back"},gesture_detector=gd},
@@ -90,14 +92,43 @@ local waiting=Animation:new{image=image,ink_y=0,
     waiting_paths={{{{1,1},{3,4},{6,2}}},{{{1,2},{4,5},{7,1}}}},leave=function() end}
 top=waiting; waiting:onShow()
 now=10; waiting:step(); assert(waiting.total==0 and not waiting.message_id)
-now=13; waiting:step(); assert(waiting.total==3 and waiting.waiting_index==1 and not waiting.message_id)
+now=13; waiting:step(); assert(waiting.total==3 and not waiting.message_id)
+local first_phrase=waiting.waiting_index
 local due=waiting.waiting_due
 waiting:onSuspend(); now=50; waiting:onResume()
 assert(waiting.waiting_due==due+37)
-now=waiting.waiting_due+.1; waiting:step(); assert(waiting.waiting_index==2)
+now=waiting.waiting_due+.1; waiting:step(); assert(waiting.waiting_index~=first_phrase and waiting.burning)
+image:fill(0)
+now=waiting.started+3; waiting:step()
+assert(black()>0 and black()<120*180, 'burn must consume part of the page')
 waiting:setReply({{{1,1},{3,5},{9,2}}},"actual-reply")
-assert(not waiting.waiting_due and not waiting.waiting_paths and waiting.message_id=="actual-reply")
+assert(not waiting.waiting_due and not waiting.waiting_paths and not waiting.burning and waiting.message_id=="actual-reply")
 now=now+25; waiting:step()
-assert(waiting.drawn==waiting.total and waiting.waiting_index==2)
+assert(waiting.drawn==waiting.total)
 waiting:onCloseWidget()
+
+-- Reopening the journal continues the shuffled deck in this KOReader process.
+local catalogue={{{{1,1},{3,4}}},{{{1,2},{3,5}}},{{{1,3},{3,6}}},{{{1,4},{3,7}}}}
+local seen,previous={},nil
+for index=1,12 do
+    if (index-1)%4==0 then seen={} end
+    image:fill(255)
+    local dialog=Animation:new{image=image,ink_y=0,waiting_paths=catalogue,leave=function() end}
+    top=dialog; now=dialog.waiting_due+.1; dialog:step()
+    assert(not seen[dialog.waiting_index] and dialog.waiting_index~=previous)
+    seen[dialog.waiting_index],previous=true,dialog.waiting_index
+    dialog:onCloseWidget()
+end
+
+-- The burn completely clears its trailing ash, including a skipped final frame.
+local Model=require('riddlelocal/model')
+image:fill(0)
+local progress=0
+for _,next_progress in ipairs{.1,.25,.5,.72,1} do
+    local region=Model.burn(image,120,180,next_progress,progress,255,0)
+    assert(region.y>=0 and region.y+region.h<=180)
+    progress=next_progress
+end
+assert(black()==0,'burn left ash on the final blank page')
+for _,mode in ipairs(refreshes) do assert(mode~="full", "waiting effect requested a flashing full refresh") end
 

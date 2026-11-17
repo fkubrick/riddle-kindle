@@ -31,6 +31,36 @@ function M.dissolve(image, w, h, top, stages)
     return buckets
 end
 
+-- A monochrome charred edge travels upward. Only its swept strip is repainted.
+function M.burn(image, w, h, progress, previous, white, black)
+    local grain = math.max(2, math.floor(w/270))
+    local band = math.max(3, math.floor(h*.009))
+    local amplitude = math.max(6, math.floor(h*.035))
+    local y0,y1 = h,0
+    for x=0,w-1,grain do
+        local noise = amplitude*(.55*math.sin(x/31)+.25*math.sin(x/9)+
+            .2*(M.bucket(math.floor(x/grain),0,101)/50-1))
+        local function edge(at)
+            return math.floor(h+amplitude-(h+2*amplitude+band*3+grain)*at+noise)
+        end
+        local front,old = edge(progress),edge(previous)
+        local top,bottom = math.max(0,front),math.min(h,old+band*3+grain)
+        local width = math.min(grain,w-x)
+        if bottom>top then
+            image:paintRect(x,top,width,bottom-top,white)
+            local end_black = math.min(h,front+band)
+            if end_black>top then image:paintRect(x,top,width,end_black-top,black) end
+            for y=math.max(0,front+band),math.min(h-1,front+band*3),grain do
+                if M.bucket(x,y,5)==0 then
+                    image:paintRect(x,y,width,math.min(grain,h-y),black)
+                end
+            end
+            y0,y1 = math.min(y0,top),math.max(y1,bottom)
+        end
+    end
+    if y1>y0 then return {x=0,y=y0,w=w,h=y1-y0} end
+end
+
 -- Time follows pen travel, including short lifts between disconnected strokes.
 function M.penPlan(paths, radius)
     local plan, distance = {}, 0

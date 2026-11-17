@@ -13,6 +13,24 @@ local Animation = Input:extend{
 }
 local ERASE_SECONDS, WRITE_SECONDS, FRAME_SECONDS = 3.8, 18, .18
 local ERASE_STAGES = 14
+require("random") -- KOReader seeds math.random once per process.
+local waiting_order, waiting_count, last_waiting = {},0,nil
+
+local function nextWaiting(count)
+    if #waiting_order==0 or waiting_count~=count then
+        waiting_order,waiting_count={},count
+        for index=1,count do waiting_order[index]=index end
+        for index=count,2,-1 do
+            local other=math.random(index)
+            waiting_order[index],waiting_order[other]=waiting_order[other],waiting_order[index]
+        end
+        if count>1 and waiting_order[count]==last_waiting then
+            waiting_order[1],waiting_order[count]=waiting_order[count],waiting_order[1]
+        end
+    end
+    last_waiting=table.remove(waiting_order)
+    return last_waiting
+end
 
 function Animation:init()
     self.w,self.h = Screen:getWidth(),Screen:getHeight()
@@ -71,34 +89,50 @@ function Animation:step()
         self.covered_at = nil
     end
     if self.waiting_due and time.now()>=self.waiting_due then
-        self.waiting_index=(self.waiting_index or 0)%#self.waiting_paths+1
+        self.burning=self.waiting_index~=nil
+        self.burn_progress=0
+        self.erase_seconds=self.burning and 6 or ERASE_SECONDS
+        self.waiting_index=nextWaiting(#self.waiting_paths)
         self.paths,self.total,self.radius=Model.fit(self.waiting_paths[self.waiting_index],self.w,self.h,Screen:scaleBySize(26))
         self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
-        self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES)
+        if not self.burning then self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES) end
         self.started,self.stage,self.drawn,self.segment_drawn=time.now(),-1,0,nil
         self.write_seconds=28
-        self.waiting_due=self.started+time.s(ERASE_SECONDS+self.write_seconds+8)
+        self.waiting_due=self.started+time.s(self.erase_seconds+self.write_seconds+8)
     end
     local elapsed = time.to_s(time.now()-self.started)
+    local erase_seconds = self.erase_seconds or ERASE_SECONDS
     local x0,y0,x1,y1 = self.w,self.h,-1,-1
     local function dirty(x,y,r)
         x0,y0 = math.min(x0,x-r),math.min(y0,y-r)
         x1,y1 = math.max(x1,x+r),math.max(y1,y+r)
     end
-    local stage = math.min(ERASE_STAGES-1,math.floor(elapsed/ERASE_SECONDS*ERASE_STAGES))
-    for index=self.stage+1,stage do
-        for _,pixel in ipairs(self.erase_pixels[index+1]) do
-            local x,y = pixel%self.w,math.floor(pixel/self.w)
-            self.image:setPixel(x,y,BB.COLOR_WHITE)
-            dirty(x,y,0)
+    if self.burning then
+        local progress=math.min(1,elapsed/erase_seconds)
+        if progress>self.burn_progress then
+            local rect=Model.burn(self.image,self.w,self.h,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK)
+            if rect then
+                dirty(rect.x,rect.y,0)
+                dirty(rect.x+rect.w-1,rect.y+rect.h-1,0)
+            end
+            self.burn_progress=progress
         end
+    else
+        local stage = math.min(ERASE_STAGES-1,math.floor(elapsed/erase_seconds*ERASE_STAGES))
+        for index=self.stage+1,stage do
+            for _,pixel in ipairs(self.erase_pixels[index+1]) do
+                local x,y = pixel%self.w,math.floor(pixel/self.w)
+                self.image:setPixel(x,y,BB.COLOR_WHITE)
+                dirty(x,y,0)
+            end
+        end
+        self.stage = stage
     end
-    self.stage = stage
-    if elapsed >= ERASE_SECONDS then
+    if elapsed >= erase_seconds then
         if not self.reply_started then
             self.reply_started = true
         end
-        local progress = math.min(1,(elapsed-ERASE_SECONDS)/(self.write_seconds or WRITE_SECONDS))
+        local progress = math.min(1,(elapsed-erase_seconds)/(self.write_seconds or WRITE_SECONDS))
         -- Slight acceleration and hesitation, while preserving monotonic motion.
         local target = self.pen_distance*(progress-math.sin(progress*math.pi*8)*.012)
         while self.drawn < #self.pen_plan do
@@ -122,9 +156,9 @@ function Animation:step()
         x0,y0,x1,y1 = math.max(0,x0),math.max(0,y0),math.min(self.w-1,x1),math.min(self.h-1,y1)
         UI:setDirty(self,"fast",Geom:new{x=x0,y=y0,w=x1-x0+1,h=y1-y0+1})
     end
-    if self.waiting_due and self.drawn==self.total and elapsed>=ERASE_SECONDS then
+    if self.waiting_due and self.drawn==self.total and elapsed>=erase_seconds then
         UI:scheduleIn(math.max(FRAME_SECONDS,time.to_s(self.waiting_due-time.now())),self.advance)
-    elseif self.drawn<self.total or elapsed<ERASE_SECONDS then
+    elseif self.drawn<self.total or elapsed<erase_seconds then
         UI:scheduleIn(FRAME_SECONDS,self.advance)
     end
 end
@@ -135,10 +169,11 @@ function Animation:setReply(paths,id)
     self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
     self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
     self.drawn,self.segment_drawn=0,nil
-    if time.to_s(time.now()-self.started)>=ERASE_SECONDS then
+    if self.burning or time.to_s(time.now()-self.started)>=ERASE_SECONDS then
         self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES)
         self.started,self.stage,self.reply_started=time.now(),-1,nil
     end
+    self.burning,self.erase_seconds=nil,nil
     self.covered_at=nil
     UI:unschedule(self.advance)
     UI:scheduleIn(FRAME_SECONDS,self.advance)
