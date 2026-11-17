@@ -7,187 +7,215 @@ local Geom = require("ui/geometry")
 local Buttons = require("ui/widget/buttontable")
 local Input = require("ui/widget/container/inputcontainer")
 local Model = require("riddlelocal/model")
+local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
+require("random")
+local FRAME, ABSORB_SECONDS, READ_SECONDS = .3,35,30
 local Animation = Input:extend{
-    modal = true, covers_fullscreen = true, stop_events_propagation = true, disable_double_tap = true,
+    modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
-local ERASE_SECONDS, WRITE_SECONDS, FRAME_SECONDS = 3.8, 18, .18
-local WAIT_WRITE_SECONDS, WAIT_BURN_SECONDS, WAIT_CYCLE_SECONDS = 18, 30, 60
-local ERASE_STAGES = 14
-require("random") -- KOReader seeds math.random once per process.
-local waiting_order, waiting_count, last_waiting = {},0,nil
-
-local function nextWaiting(count)
-    if #waiting_order==0 or waiting_count~=count then
-        waiting_order,waiting_count={},count
-        for index=1,count do waiting_order[index]=index end
-        for index=count,2,-1 do
-            local other=math.random(index)
-            waiting_order[index],waiting_order[other]=waiting_order[other],waiting_order[index]
-        end
-        if count>1 and waiting_order[count]==last_waiting then
-            waiting_order[1],waiting_order[count]=waiting_order[count],waiting_order[1]
-        end
-    end
-    last_waiting=table.remove(waiting_order)
-    return last_waiting
-end
+local colors={}
+for value=0,255,17 do colors[value]=BB.Color8(value) end
 
 function Animation:init()
-    self.w,self.h = Screen:getWidth(),Screen:getHeight()
-    self.dimen = Geom:new{ x=0,y=0,w=self.w,h=self.h }
-    self.controls = Buttons:new{ width=self.w, buttons={{
+    self.w,self.h=Screen:getWidth(),Screen:getHeight()
+    self.dimen=Geom:new{x=0,y=0,w=self.w,h=self.h}
+    self.controls=Buttons:new{width=self.w,buttons={{
         {text="Fermer",callback=function() self.leave(false) end},
-        {text=self.write_label or "Recommencer",callback=function() self.leave(true) end},
-    }} }
-    self.bottom = self.h-self.controls:getSize().h
-    self.journal_controls = Idle.new(function(visible)
-        self[1] = visible and self.controls or nil
-        if UI:getTopmostVisibleWidget() == self then
+        {text=self.write_label or "Écrire",callback=function() self.leave(true) end},
+    }}}
+    self.bottom=self.h-self.controls:getSize().h
+    self.journal_controls=Idle.new(function(visible)
+        self[1]=visible and self.controls or nil
+        if UI:getTopmostVisibleWidget()==self then
             UI:setDirty(self,"ui",Geom:new{x=0,y=self.bottom,w=self.w,h=self.h-self.bottom})
         end
     end)
-    if Device:hasKeys() then self.key_events = { Close = { { Device.input.group.Back } } } end
-    if self.waiting_paths then
-        self.waiting_index=nextWaiting(#self.waiting_paths)
-        self.paths=self.waiting_paths[self.waiting_index]
-        self.write_seconds=WAIT_WRITE_SECONDS
+    if Device:hasKeys() then self.key_events={Close={{Device.input.group.Back}}} end
+    self.advance=function() self:step() end
+    self.started=time.now()
+    self.phase="waiting"
+    if self.submission then
+        self.submission_active=true
+        self.duration=ABSORB_SECONDS
+        if self.paper_burn==true and math.random(4)==1 then
+            self.phase="burn"
+            self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
+            self.burn_progress=0
+        else
+            self.phase="absorb"
+            -- Let the controller start the upload before preparing the raster.
+            self.prepare_absorption=true
+        end
+    elseif self.paths then
+        self:setReply(self.paths,"local-preview",nil,self.block_ends)
     end
-    if self.paths then
-        self.paths,self.total,self.radius = Model.fit(self.paths,self.w,self.h,Screen:scaleBySize(26))
-    else self.paths,self.total,self.radius = {},0,2 end
-    self.pen_plan,self.pen_distance = Model.penPlan(self.paths,self.radius)
-    self.erase_pixels = Model.dissolve(self.image,self.w,self.h,self.ink_y,ERASE_STAGES)
-    self.started = time.now()
-    if self.waiting_paths then
-        self.waiting_due=self.started+time.s(WAIT_CYCLE_SECONDS-WAIT_BURN_SECONDS)
-    end
-    self.stage,self.drawn = -1,0
-    self.advance = function() self:step() end
 end
+
 function Animation:handleEvent(event)
     if Idle.menuSwipe(self,event,self.h,self.open_menu) then return true end
-    if Idle.swipe(self, event, "east", self.w) then
-        self.leave(true)
-        return true
-    end
+    if Idle.swipe(self,event,"east",self.w) then self.leave(true); return true end
     if Idle.isTap(event) then
-        local was_visible = self.journal_controls.visible
+        local visible=self.journal_controls.visible
         self.journal_controls:show()
-        if not was_visible then return true end
+        if not visible then return true end
     end
     return Input.handleEvent(self,event)
 end
 function Animation:onShow()
     UI:setDirty(self,"ui")
-    UI:scheduleIn(FRAME_SECONDS,self.advance)
+    UI:scheduleIn(FRAME,self.advance)
     return true
 end
+
+function Animation:beginReveal()
+    self.phase,self.started="reveal",time.now()
+    self.completed=0
+    self.group_plan=nil
+    self.reveal_seconds=math.min(24,math.max(8,#self.groups*3))
+end
+function Animation:startResponse()
+    if not self.message_id then self.phase="waiting"; return end
+    if self.play_burn then
+        self.play_burn=false
+        self.phase,self.started,self.duration="burn",time.now(),8
+        self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
+        self.burn_progress=0
+    else self:beginReveal() end
+end
+
+function Animation:setReply(paths,id,effect,block_ends)
+    if self.message_id==id then return end
+    self.message_id=id
+    self.hide_due=nil
+    self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
+    self.groups={}
+    local first=1
+    for _,last in ipairs(block_ends or {#self.paths}) do
+        local group={}
+        for index=first,last do group[#group+1]=self.paths[index] end
+        self.groups[#self.groups+1]={paths=group,rect=FX.bounds(group,self.w,self.h,self.radius)}
+        first=last+1
+    end
+    self.play_burn=self.paper_burn==true and effect=="burn"
+    self.group_plan=nil
+    -- Receive in parallel; present the newest reply after the submitted ink is absorbed.
+    if not self.submission_active then
+        if self.phase=="waiting" then self:startResponse()
+        else
+            self.phase,self.started,self.duration="erase",time.now(),.6
+            self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,14)
+            self.erase_stage=-1
+            self.ink_plan,self.burn_plan=nil,nil
+        end
+    end
+    UI:unschedule(self.advance)
+    UI:scheduleIn(FRAME,self.advance)
+end
+
+local function intersects(a,b)
+    return a.x<b.x+b.w and b.x<a.x+a.w and a.y<b.y+b.h and b.y<a.y+a.h
+end
+function Animation:restoreCompleted(rect)
+    for index=1,self.completed do
+        local group=self.groups[index]
+        if intersects(rect,group.rect) then FX.drawPaths(self.image,group.paths,self.radius,BB.COLOR_BLACK) end
+    end
+end
+
 function Animation:step()
     if self.closed or self.suspended then return end
-    if UI:getTopmostVisibleWidget() ~= self then
-        self.covered_at = self.covered_at or time.now()
-        UI:scheduleIn(FRAME_SECONDS,self.advance)
+    local now=time.now()
+    if UI:getTopmostVisibleWidget()~=self then
+        self.covered_at=self.covered_at or now
+        UI:scheduleIn(FRAME,self.advance)
         return
     end
     if self.covered_at then
-        local pause = time.now()-self.covered_at
-        self.started = self.started+pause
-        if self.waiting_due then self.waiting_due=self.waiting_due+pause end
-        self.covered_at = nil
+        local pause=now-self.covered_at
+        self.started=self.started+pause
+        if self.hide_due then self.hide_due=self.hide_due+pause end
+        self.covered_at=nil
     end
-    if self.waiting_due and time.now()>=self.waiting_due then
-        self.burning=true
-        self.burn_progress=0
-        self.burn_plan=Model.burnPlan(self.w,self.h,self.waiting_index)
-        self.erase_seconds=WAIT_BURN_SECONDS
-        self.waiting_index=nextWaiting(#self.waiting_paths)
-        self.paths,self.total,self.radius=Model.fit(self.waiting_paths[self.waiting_index],self.w,self.h,Screen:scaleBySize(26))
-        self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
-        self.erase_pixels=nil
-        self.started,self.stage,self.drawn,self.segment_drawn=time.now(),-1,0,nil
-        self.write_seconds=WAIT_WRITE_SECONDS
-        self.waiting_due=self.started+time.s(WAIT_CYCLE_SECONDS)
+    local elapsed=time.to_s(now-self.started)
+    local rect,refresh=nil,"ui"
+    local function dirty(region)
+        if not region then return end
+        if not rect then rect={x=region.x,y=region.y,w=region.w,h=region.h}; return end
+        local x,y=math.min(rect.x,region.x),math.min(rect.y,region.y)
+        rect={x=x,y=y,w=math.max(rect.x+rect.w,region.x+region.w)-x,
+            h=math.max(rect.y+rect.h,region.y+region.h)-y}
     end
-    local elapsed = time.to_s(time.now()-self.started)
-    local erase_seconds = self.erase_seconds or ERASE_SECONDS
-    local x0,y0,x1,y1 = self.w,self.h,-1,-1
-    local function dirty(x,y,r)
-        x0,y0 = math.min(x0,x-r),math.min(y0,y-r)
-        x1,y1 = math.max(x1,x+r),math.max(y1,y+r)
-    end
-    if self.burning then
-        local progress=math.min(1,elapsed/erase_seconds)
-        if progress>self.burn_progress then
-            local rect=Model.burn(self.image,self.burn_plan,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK)
-            if rect then
-                dirty(rect.x,rect.y,0)
-                dirty(rect.x+rect.w-1,rect.y+rect.h-1,0)
+    if self.phase=="absorb" or self.phase=="burn" or self.phase=="erase" then
+        local phase=self.phase
+        local progress=math.min(1,elapsed/self.duration)
+        if phase=="absorb" then
+            if self.prepare_absorption then
+                self.ink_plan=FX.prepare(self.image,self.w,self.h,
+                    {x=0,y=self.ink_y or 0,w=self.w,h=self.h-(self.ink_y or 0)})
+                self.prepare_absorption=nil
             end
+            dirty(FX.render(self.image,self.ink_plan,progress,colors))
+        elseif phase=="burn" then
+            refresh="fast"
+            dirty(Model.burn(self.image,self.burn_plan,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK))
             self.burn_progress=progress
-            if progress==1 then self.burn_plan=nil end
+        else
+            local stage=math.min(13,math.floor(progress*14))
+            for index=self.erase_stage+1,stage do for _,pixel in ipairs(self.erase_pixels[index+1]) do
+                local x,y=pixel%self.w,math.floor(pixel/self.w)
+                self.image:setPixel(x,y,BB.COLOR_WHITE); dirty({x=x,y=y,w=1,h=1})
+            end end
+            self.erase_stage=stage
         end
-    else
-        local stage = math.min(ERASE_STAGES-1,math.floor(elapsed/erase_seconds*ERASE_STAGES))
-        for index=self.stage+1,stage do
-            for _,pixel in ipairs(self.erase_pixels[index+1]) do
-                local x,y = pixel%self.w,math.floor(pixel/self.w)
-                self.image:setPixel(x,y,BB.COLOR_WHITE)
-                dirty(x,y,0)
+        if progress==1 then
+            self.ink_plan,self.burn_plan,self.erase_pixels=nil,nil,nil
+            if self.submission_active then
+                self.submission_active=false
+                self.phase="waiting"
+                self:startResponse()
+            elseif phase=="burn" then self:beginReveal()
+            else self:startResponse() end
+        end
+    elseif self.phase=="reveal" then
+        local per_group=self.reveal_seconds/#self.groups
+        local complete=math.min(#self.groups,math.floor(elapsed/per_group))
+        while self.completed<complete do
+            if self.group_plan and self.group_plan.rect then
+                local area=self.group_plan.rect
+                self.image:paintRect(area.x,area.y,area.w,area.h,BB.COLOR_WHITE)
+                self:restoreCompleted(area); dirty(area)
             end
+            self.completed=self.completed+1
+            local group=self.groups[self.completed]
+            FX.drawPaths(self.image,group.paths,self.radius,BB.COLOR_BLACK)
+            dirty(group.rect); self.group_plan=nil
         end
-        self.stage = stage
-    end
-    if elapsed >= erase_seconds then
-        if not self.reply_started then
-            self.reply_started = true
-        end
-        local progress = math.min(1,(elapsed-erase_seconds)/(self.write_seconds or WRITE_SECONDS))
-        -- Slight acceleration and hesitation, while preserving monotonic motion.
-        local target = self.pen_distance*(progress-math.sin(progress*math.pi*8)*.012)
-        while self.drawn < #self.pen_plan do
-            local segment = self.pen_plan[self.drawn+1]
-            if target < segment.start then break end
-            local finish = math.min(segment.length,target-segment.start)
-            local start = self.segment_drawn or 0
-            local count = math.max(1,math.ceil(finish-start))
-            for j=1,count do
-                local fraction = (start+(finish-start)*j/count)/segment.length
-                local x = math.floor(segment.from[1]+(segment.to[1]-segment.from[1])*fraction+.5)
-                local y = math.floor(segment.from[2]+(segment.to[2]-segment.from[2])*fraction+.5)
-                self.image:paintCircle(x,y,self.radius,BB.COLOR_BLACK)
-                dirty(x,y,self.radius)
+        if self.completed==#self.groups then
+            self.phase="reading"
+            self.hide_due=now+time.s(READ_SECONDS)
+        else
+            local group=self.groups[self.completed+1]
+            if not self.group_plan then
+                local scratch=BB.new(self.w,self.h,BB.TYPE_BB8)
+                scratch:fill(BB.COLOR_WHITE)
+                FX.drawPaths(scratch,group.paths,self.radius,BB.COLOR_BLACK)
+                self.group_plan=FX.prepare(scratch,self.w,self.h,group.rect)
+                scratch:free()
             end
-            if finish < segment.length then self.segment_drawn=finish; break end
-            self.drawn,self.segment_drawn = self.drawn+1,nil
+            local progress=(elapsed-self.completed*per_group)/per_group
+            local area=FX.render(self.image,self.group_plan,1-progress,colors)
+            if area then self:restoreCompleted(area); dirty(area) end
         end
+    elseif self.phase=="reading" and now>=self.hide_due then
+        self.leave(true,true)
+        return
     end
-    if x1>=x0 then
-        x0,y0,x1,y1 = math.max(0,x0),math.max(0,y0),math.min(self.w-1,x1),math.min(self.h-1,y1)
-        UI:setDirty(self,"fast",Geom:new{x=x0,y=y0,w=x1-x0+1,h=y1-y0+1})
-    end
-    if self.waiting_due and self.drawn==self.total and elapsed>=erase_seconds then
-        UI:scheduleIn(math.max(FRAME_SECONDS,time.to_s(self.waiting_due-time.now())),self.advance)
-    elseif self.drawn<self.total or elapsed<erase_seconds then
-        UI:scheduleIn(FRAME_SECONDS,self.advance)
-    end
+    if rect then UI:setDirty(self,refresh,Geom:new(rect)) end
+    if self.phase=="reading" then UI:scheduleIn(math.max(FRAME,time.to_s(self.hide_due-now)),self.advance)
+    elseif self.phase~="waiting" then UI:scheduleIn(FRAME,self.advance) end
 end
-function Animation:setReply(paths,id)
-    if self.message_id==id then return end
-    self.message_id=id
-    self.waiting_paths,self.waiting_due,self.write_seconds=nil,nil,nil
-    self.paths,self.total,self.radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
-    self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
-    self.drawn,self.segment_drawn=0,nil
-    if self.burning or time.to_s(time.now()-self.started)>=ERASE_SECONDS then
-        self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES)
-        self.started,self.stage,self.reply_started=time.now(),-1,nil
-    end
-    self.burning,self.burn_plan,self.erase_seconds=nil,nil,nil
-    self.covered_at=nil
-    UI:unschedule(self.advance)
-    UI:scheduleIn(FRAME_SECONDS,self.advance)
-end
+
 function Animation:paintTo(bb,x,y)
     bb:blitFrom(self.image,x,y,0,0,self.w,self.h)
     if self.journal_controls.visible then
@@ -196,27 +224,22 @@ function Animation:paintTo(bb,x,y)
     end
 end
 function Animation:onSuspend()
-    self.suspended = time.now()
-    UI:unschedule(self.advance)
-    self.journal_controls:hide()
+    self.suspended=time.now(); UI:unschedule(self.advance); self.journal_controls:hide()
 end
 function Animation:onResume()
     if self.suspended then
         local pause=time.now()-self.suspended
         self.started=self.started+pause
-        if self.waiting_due then self.waiting_due=self.waiting_due+pause end
+        if self.hide_due then self.hide_due=self.hide_due+pause end
+        if self.covered_at then self.covered_at=self.covered_at+pause end
     end
-    self.suspended = nil
-    UI:setDirty(self,"ui")
-    UI:scheduleIn(FRAME_SECONDS,self.advance)
+    self.suspended=nil; UI:setDirty(self,"ui"); UI:scheduleIn(FRAME,self.advance)
 end
 function Animation:onClose() self.leave(false); return true end
 function Animation:onSetDimensions() self.leave(false); return true end
 function Animation:onCloseWidget()
-    self.closed = true
-    UI:unschedule(self.advance)
-    self.journal_controls:hide()
-    self.image:free()
-    self.controls:free()
+    self.closed=true; UI:unschedule(self.advance); self.journal_controls:hide()
+    self.ink_plan,self.group_plan,self.burn_plan=nil,nil,nil
+    self.image:free(); self.controls:free()
 end
 return Animation

@@ -34,11 +34,21 @@ end
 
 local function readReply(reply)
     if not Ink.validReply(reply) then return nil end
-    if reply.paths == Json.null then
-        return { id = reply.id, message_id = reply.message_id, text = reply.text }
-    end
+    if reply.paths == Json.null then reply.paths = nil end
     if reply.paths ~= nil and not State.validPaths(reply.paths) then return nil end
+    if reply.effect~=nil and reply.effect~="burn" and reply.effect~="dissolve" then return nil end
+    if reply.block_ends~=nil and not State.validBlocks(reply.paths,reply.block_ends) then return nil end
     return reply
+end
+
+function State.validBlocks(paths,ends)
+    if type(paths)~="table" or type(ends)~="table" or #ends==0 or #ends>160 then return false end
+    local previous=0
+    for _,last in ipairs(ends) do
+        if type(last)~="number" or last%1~=0 or last<=previous or last>#paths then return false end
+        previous=last
+    end
+    return previous==#paths
 end
 
 function State.load(data)

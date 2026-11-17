@@ -2,6 +2,7 @@ local Base = require("ink/alfred/reply")
 local BB = require("ffi/blitbuffer")
 local Geom = require("ui/geometry")
 local UI = require("ui/uimanager")
+local time = require("ui/time")
 local Idle = require("riddlelocal/idlecontrols")
 local Reply = Base:extend{ disable_double_tap = true }
 
@@ -37,12 +38,32 @@ function Reply:paintTo(bb, x, y)
     if self.journal_controls.visible then self.button:paintTo(bb, x + self.button_x, y + self.button_y) end
 end
 
+function Reply:replace(id,text)
+    Base.replace(self,id,text)
+    if self.expire then UI:unschedule(self.expire) end
+    self.hide_due=time.now()+time.s(.6*#Base.groups(text)+30)
+    self.expire=function()
+        if UI:getTopmostVisibleWidget()~=self then UI:scheduleIn(1,self.expire); return end
+        self.write(true)
+    end
+    UI:scheduleIn(time.to_s(self.hide_due-time.now()),self.expire)
+end
+
 function Reply:onSuspend()
     self.journal_controls:hide()
+    self.pause_at=time.now()
+    if self.expire then UI:unschedule(self.expire) end
+end
+
+function Reply:onResume()
+    if self.pause_at then self.hide_due=self.hide_due+time.now()-self.pause_at end
+    self.pause_at=nil
+    if self.expire then UI:scheduleIn(math.max(0,time.to_s(self.hide_due-time.now())),self.expire) end
 end
 
 function Reply:onCloseWidget()
     self.journal_controls:hide()
+    if self.expire then UI:unschedule(self.expire) end
     Base.onCloseWidget(self)
 end
 

@@ -1,12 +1,12 @@
 # riddle-kindle
 
-A handwritten diary for jailbroken Kindle readers. Write on the page, let the ink dissolve, and receive a reply drawn stroke by stroke. Inspired by [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) and built on [Ink Away](https://github.com/EmirErtorer/ink-away.koplugin) inside KOReader.
+A handwritten diary for jailbroken Kindle readers. Write on the page, watch the ink spread into the paper, and receive a reply emerging in small word blocks. Inspired by [MaximeRivest/riddle](https://github.com/MaximeRivest/riddle) and built on [Ink Away](https://github.com/EmirErtorer/ink-away.koplugin) inside KOReader.
 
 This is the Kindle client and its handwriting renderer. A compatible HTTPS relay and a separate assistant are required for replies. The relay protocol is documented in [PROTOCOL.md](PROTOCOL.md). The original riddle application targets reMarkable hardware.
 
 ## Status
 
-Writing, persisted outgoing pages, connected replies, draft preservation and swipe navigation have been used on a jailbroken Kindle Paperwhite 3 running firmware 5.12.4. The latest fragment dissolve, smoother stroke replay and menu changes passed local LuaJIT checks and have been installed on that device. Their appearance on the physical display is awaiting user feedback. Other devices are untested.
+Writing, persisted outgoing pages, connected replies, draft preservation, swipe navigation and burning holes have been used on a jailbroken Kindle Paperwhite 3 running firmware 5.12.4. The new ink absorption, block reveal and automatic reply expiry have passed local LuaJIT checks; their appearance and timing on the physical display still need confirmation. Other devices are untested.
 
 The ink renderer is experimental. E-ink refresh modes can leave ghosting and the physical display cadence varies. The plugin keeps the reader awake while open, which increases power use.
 
@@ -23,7 +23,7 @@ Keep this configuration file private. The client is configured with your relay�
 
 ## Use
 
-- Write, then lift your finger or capacitive stylus. After six seconds of inactivity, the journal saves and queues the page.
+- Write, then lift your finger or capacitive stylus. After five seconds of inactivity, the journal saves and queues the page.
 - Swipe right while reading to return to writing.
 - Swipe left from the right edge while writing to view the latest reply. The draft is retained and its send timer pauses during reading.
 - Swipe down from the top edge while reading to open KOReader’s menu.
@@ -36,15 +36,15 @@ If the main journal state is empty or missing after an interrupted save, opening
 
 The user-facing controls are currently French. The plugin receives replies from the configured relay every five seconds when idle. Assistant response latency depends on the external assistant and its notification mechanism.
 
-## Waiting animation
+## Ink effects
 
-After a queued page dissolves, the diary can display twenty-four prerecorded French phrases. A phrase and its burn occupy about sixty seconds. The first starts as soon as the initial dissolve ends, about four seconds after the page is queued, and finishes writing around twenty-two seconds. The burn runs from thirty to sixty seconds: scattered holes open with irregular blackened edges, grow and merge until the page is white. The following phrase starts a new one-minute cycle.
+After queuing, the submitted ink spreads and fades like ink soaking into blotting paper over thirty-five seconds. Network requests continue during this effect. An early reply is received and saved, then shown after absorption finishes. The page otherwise remains blank: there are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
 
-The hole pattern varies with the selected phrase. Its growth is computed once per burn; each small patch is painted at most twice, first black and then white, without requesting a flashing full refresh. This experimental effect needs feedback on the physical display.
+Replies emerge as small groups of words: diffuse ink gathers into sharp letters, reversing the absorption effect. The renderer supplies word boundaries so the complete layout stays fixed. A reply remains visible for thirty seconds after it has fully appeared, then clears. Swipe left from the right edge to replay it. A draft retained while reading stays intact and does not send when the reply expires automatically; writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 
-The phrases are shuffled without repeats until the full collection has been shown, with no immediate repeat across shuffles. Reopening the journal continues the collection within the same KOReader session; restarting KOReader starts a new shuffle. These are local visual effects, never assistant messages or transmitted pages. An actual reply interrupts the sequence, including the burning effect. Returning to writing cancels it.
+**Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. With it enabled, one in four submitted pages is randomly selected for a thirty-five-second burn instead of absorption. The assistant can request an eight-second burn before a reply using `effect: "burn"`; spontaneous messages default to this effect. With burning disabled, all messages use ordinary ink effects.
 
-Edit `tools/waiting-phrases.json` and run `python tools/build_waiting.py` to rebuild `waiting-paths.json`. Examples include “La page blanche n’est jamais vide.”, “Tout secret commence par un silence.” and “Une étincelle veille entre les pages.”
+The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. Ink absorption uses sixteen shades of gray and partial updates; burning uses fast updates. These effects do not request a full-screen flashing refresh, but actual ghosting and fluidity depend on the device.
 
 ## Source layout
 

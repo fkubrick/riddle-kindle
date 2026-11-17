@@ -1,4 +1,5 @@
 {
   "relay_url": "https://journal.example.org",
-  "token": ""
+  "token": "",
+  "paper_burn": false
 }

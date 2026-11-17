@@ -9,7 +9,7 @@ local time = require("ui/time")
 local BB = require("ffi/blitbuffer")
 local Screen = require("device").screen
 local View = Base:extend{}
-local QUIET, POLL, RETRY = 6, 5, 15
+local QUIET, POLL, RETRY = 5, 5, 15
 local MAILBOX = "mailbox"
 
 local function copy(items)
@@ -59,7 +59,7 @@ function View:acknowledge(message_id)
     return false
 end
 
-function View:leaveReply(dialog, write, close_canvas)
+function View:leaveReply(dialog, write, close_canvas, automatic)
     if write and not self:acknowledge(dialog.message_id) then return end
     if not write then self.dismissed = dialog.message_id end
     self.reply_view = nil
@@ -72,6 +72,7 @@ function View:leaveReply(dialog, write, close_canvas)
     if write then
         self.quiet_after = time.now() + time.s(QUIET)
         self.reply_after = self.quiet_after
+        self.hold_draft=automatic==true and #self.session.draft>0 or false
     end
     self:wake(0)
 end
@@ -88,9 +89,10 @@ function View:animation(snapshot, page_id)
     local dialog
     dialog = require("riddlelocal/animation"):new{
         image = snapshot, ink_y = self.view.area_y, write_label = "Écrire",
-        waiting_paths = page_id and Ink.read("plugins/riddle.koplugin/waiting-paths.json",1048576) or nil,
+        paper_burn = self.paper_burn,
+        submission = page_id ~= nil,
         open_menu = function() self.kui.menu:onShowMenu() end,
-        leave = function(write) self:leaveReply(dialog, write, not write) end,
+        leave = function(write, automatic) self:leaveReply(dialog, write, not write, automatic) end,
     }
     dialog.page_id = page_id
     self.reply_view = dialog
@@ -155,7 +157,7 @@ function View:showReply(manual)
             blank:fill(BB.COLOR_WHITE)
             dialog = self:animation(blank)
         end
-        dialog:setReply(reply.paths, reply.message_id)
+        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends)
     else
         if dialog then
             UI:close(dialog)
@@ -167,7 +169,7 @@ function View:showReply(manual)
             message_id = reply.message_id, text = reply.text,
             open_menu = function() self.kui.menu:onShowMenu() end,
             dismiss = function() self:leaveReply(dialog, false, false) end,
-            write = function() self:leaveReply(dialog, true, false) end,
+            write = function(automatic) self:leaveReply(dialog, true, false, automatic) end,
         }
         self.reply_view = dialog
         UI:show(dialog)
@@ -254,6 +256,15 @@ function View:startRequest(operation, arg)
     if cancel then self.cancel_request = cancel else complete(nil) end
 end
 
+function View:markDirty()
+    if self.canvas.rev == self.last_rev then return end
+    self.hold_draft=false
+    self.quiet_after=time.now()+time.s(QUIET)
+    self.oversize=false
+    self:saveDraft()
+    self:wake(QUIET)
+end
+
 function View:tick()
     if self.closing or self.suspended then return end
     local top = UI:getTopmostVisibleWidget()
@@ -266,7 +277,7 @@ function View:tick()
         if not next_due or due < next_due then next_due = due end
     end
     local reserved = self.request and self.request.mailbox and 1 or 0
-    if not self.reply_view and #self.session.draft > 0 and not self.oversize and
+    if not self.reply_view and not self.hold_draft and #self.session.draft > 0 and not self.oversize and
             State.size(self.session) + reserved < State.capacity then
         local due = self.quiet_after
         if self.queue_due and self.queue_due > due then due = self.queue_due end
@@ -341,6 +352,7 @@ function View.open(kui)
     local migration_failed = migrated and not State.write(path, session)
     local view = View:new{
         kui = kui, session = session, state_path = path, token = config.token, storage_error = migration_failed,
+        paper_burn = config.paper_burn == true,
     }
     UI:show(view)
     return view

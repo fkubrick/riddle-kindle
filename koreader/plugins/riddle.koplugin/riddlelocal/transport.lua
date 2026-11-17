@@ -15,9 +15,12 @@ function Net.interpret(id,code,body)
     local paths=r.paths
     if paths==Json.null then paths=nil end
     if paths~=nil and not OnlineState.validPaths(paths) then return nil end
+    if r.effect~=nil and r.effect~="burn" and r.effect~="dissolve" then return nil end
+    if r.block_ends~=nil and not OnlineState.validBlocks(paths,r.block_ends) then return nil end
     if r.timestamp~=nil and (type(r.timestamp)~="number" or r.timestamp~=r.timestamp or
             r.timestamp<=0 or r.timestamp==math.huge or r.timestamp%1~=0) then return nil end
-    return {reply={id=r.id,message_id=r.message_id,text=r.text,paths=paths,timestamp=r.timestamp}}
+    return {reply={id=r.id,message_id=r.message_id,text=r.text,paths=paths,timestamp=r.timestamp,
+        effect=r.effect or (not id and "burn" or nil),block_ends=r.block_ends}}
 end
 function Net.start(token,op,arg,done)
     local origin,host=Original.endpoint()

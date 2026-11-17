@@ -12,7 +12,13 @@ Return HTTP 200 and `{ "id": "the-same-page-uuid", "status": "pending" }` until 
 
 Omitting `paths` uses the text fallback. The entire response must fit 262,144 bytes. Timestamps prevent older responses arriving later from replacing the newest one.
 
+With `paths`, optional `block_ends` is an array of strictly increasing one-based path indexes. Each index ends a word block; the last must equal the number of paths, with at most 160 blocks. `tools/riddle_paths.py` exposes `reply_layout(text)`, returning `paths` and `block_ends` in groups of about two words. The older `reply_paths(text)` interface remains available. Clients receiving paths without boundaries reveal them as one block.
+
+Optional `effect` is either `"dissolve"` (ordinary ink) or `"burn"` (burn before revealing). The client honors burn only when its private `paper_burn` option is enabled. Persist these fields alongside the reply so retries and replays retain their presentation. The text-only fallback does not support these vector effects.
+
 Without `id`, the same endpoint represents the spontaneous-message mailbox. A ready spontaneous message has `id` equal to `message_id` and no `reply_to`. A page-specific message in the mailbox with `reply_to` is ignored there and fetched through its page ID. An empty mailbox returns `{ "status": "pending" }`.
+
+Spontaneous replies without an explicit effect default to `"burn"` in the client. This protocol currently carries text and vector handwriting only, not attached images.
 
 The bridge also defines GET `/native/reply`, a text-only variant retained for compatibility. The journal uses `/native/reply-paths`.
 

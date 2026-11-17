@@ -10,6 +10,15 @@ local LiveNet=require("riddlelocal/transport")
 local OnlineState=require("riddlelocal/online_state")
 local data={status="ready",id=id,message_id=msg,text="Écris à côté",paths={{{36,36},{38,40}}}}
 assert(LiveNet.interpret(id,200,Json.encode(data)).reply.paths)
+data.effect,data.block_ends="burn",{1}
+local metadata=assert(LiveNet.interpret(id,200,Json.encode(data))).reply
+assert(metadata.effect=="burn" and metadata.block_ends[1]==1)
+for _,invalid in ipairs{{0},{2},{1,1},{.5},{}} do
+    data.block_ends=invalid; assert(not LiveNet.interpret(id,200,Json.encode(data)))
+end
+data.block_ends=nil; data.effect="unexpected"
+assert(not LiveNet.interpret(id,200,Json.encode(data)))
+data.effect=nil
 assert(not LiveNet.interpret(spont,200,Json.encode(data)))
 data.paths={{{0/0,1}}}; assert(not LiveNet.interpret(id,200,Json.encode(data)))
 data.paths={{{1500,1}}}; assert(not LiveNet.interpret(id,200,Json.encode(data)))
@@ -18,6 +27,7 @@ data.id, data.reply_to = msg, id
 assert(LiveNet.interpret(nil,200,Json.encode(data)).waiting)
 data.reply_to = nil
 assert(LiveNet.interpret(nil,200,Json.encode(data)).reply.message_id==msg)
+assert(LiveNet.interpret(nil,200,Json.encode(data)).reply.effect=="burn")
 
 -- The old draft, queued UUID, acceptance flag and unread paths survive migration.
 local legacy = State.new()
@@ -35,8 +45,14 @@ assert(saved_migration.version == 2 and saved_migration.outbox[1].accepted and
     saved_migration.outbox[1].page.id == id and saved_migration.reply.paths[1][2][2] == 40)
 os.remove(state_file)
 legacy.reply.paths = Json.null
+legacy.reply.effect,legacy.reply.timestamp="burn",1794915451
 local text_migration = assert(OnlineState.load(legacy))
 assert(text_migration.reply.text == "Suite" and text_migration.reply.paths == nil)
+assert(text_migration.reply.effect=="burn" and text_migration.reply.timestamp==1794915451)
+local preserved=OnlineState.new()
+preserved.reply=metadata
+local saved_effect=assert(OnlineState.load(Json.decode(Json.encode(preserved))))
+assert(saved_effect.reply.effect=="burn" and saved_effect.reply.block_ends[1]==1)
 
 View.extend=function(self,o) return setmetatable(o,{__index=self}) end
 Reply.extend=View.extend
@@ -210,6 +226,21 @@ assert(o:saveReply(nil, answer(msg2,msg2).reply))
 o:showReply(false)
 assert(o.reply_view.message_id == msg2 and #disk.draft == 1 and #o.canvas.ops == 1)
 o.reply_view.write()
-advance(started + 12)
+advance(started + 11.9)
 assert(#disk.outbox == 0 and #disk.draft == 1, "quiet time did not restart after reading")
+advance(started + 12)
+assert(#disk.outbox == 1 and #disk.draft == 0, "send must start after five quiet seconds")
+o:stopConnector()
+
+-- Automatic expiry restores but never sends a draft left behind during reading.
+o=online()
+o.session.last_reply=answer(id,msg).reply
+addStroke(o); o:showReply(true)
+local timed=o.reply_view
+o:leaveReply(timed,true,false,true)
+assert(o.hold_draft and #o.session.draft==1)
+advance(now+12)
+assert(#o.session.outbox==0 and #o.session.draft==1)
+addStroke(o); assert(not o.hold_draft)
+advance(now+5); assert(#o.session.outbox==1)
 o:stopConnector()
