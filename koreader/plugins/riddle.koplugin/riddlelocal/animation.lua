@@ -10,7 +10,7 @@ local Model = require("riddlelocal/model")
 local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
 require("random")
-local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,35,30
+local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,7,30
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }

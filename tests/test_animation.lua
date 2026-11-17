@@ -62,23 +62,23 @@ local a=Animation:new{image=image,ink_y=0,submission=true,leave=function(write,a
     closed=closed+1; if write then write_swipes=write_swipes+1 end; if auto then automatic=automatic+1 end
 end}
 top=a; a:onShow()
-assert(a.phase=='absorb' and a.duration==35)
+assert(a.phase=='absorb' and a.duration==7)
 local tap={handler='onGesture',args={{ges='tap',hit=true}}}
 local swipe={handler='onGesture',args={{ges='swipe',direction='east',distance=60}}}
 local idle=a.journal_controls
 assert(not a[1]); assert(a:handleEvent(tap) and a[1] and closed==0)
 now=5; idle.expire(); assert(not a[1])
-assert(frame(a,10)>0 and image:inkCount()>0)
+assert(frame(a,5.5)>0 and image:inkCount()>0)
 local paths={{{1,1},{2,3},{3,2}},{{7,6},{8,8},{9,6}}}
 a:setReply(paths,'reply-1',nil,{1,2})
 assert(a.phase=='absorb' and a.submission_active,'early reception must not discard submitted ink')
-now=34; a:step(); assert(a.phase=='absorb')
-now=35; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
-assert(frame(a,37)>0 and a.completed==0 and image:inkCount()>0)
-frame(a,39); assert(a.completed==1)
-frame(a,42); assert(a.phase=='reading' and a.hide_due==72)
-now=71; a:step(); assert(automatic==0)
-now=72; a:step(); assert(automatic==1 and write_swipes==1)
+now=6; a:step(); assert(a.phase=='absorb')
+now=7; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
+assert(frame(a,9)>0 and a.completed==0 and image:inkCount()>0)
+frame(a,11); assert(a.completed==1)
+frame(a,14); assert(a.phase=='reading' and a.hide_due==44)
+now=43; a:step(); assert(automatic==0)
+now=44; a:step(); assert(automatic==1 and write_swipes==1)
 local menus=0; a.open_menu=function() menus=menus+1 end
 assert(a:handleEvent({handler='onGesture',args={{ges='swipe',direction='south',pos={x=40,y=3},distance=50}}}))
 assert(menus==1 and a:handleEvent(swipe) and write_swipes==2)
@@ -88,16 +88,16 @@ a:onCloseWidget(); assert(image.freed and not scheduled[a.advance])
 -- A late answer gathers the visible waiting drops before its first word.
 now=0; image=makeImage(120,180); image:paintRect(50,50,3,20,0)
 local empty=Animation:new{image=image,submission=true,leave=function() end}
-top=empty; now=35; empty:step()
+top=empty; now=7; empty:step()
 assert(empty.phase=='waiting' and image:inkCount()==0 and not empty.message_id)
-assert(frame(empty,50)>=3 and image:inkCount()>0)
+assert(frame(empty,17)>=3 and image:inkCount()>0)
 assert(refreshes[#refreshes].region.w<=4 and refreshes[#refreshes].region.h<=8,
     'waiting should refresh only the small regions around each drop')
 local waitingCount=image:inkCount()
-now=70; empty:step(); assert(image:inkCount()==waitingCount)
+now=37; empty:step(); assert(image:inkCount()==waitingCount)
 empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='gather')
-assert(frame(empty,71)>0)
-frame(empty,72); assert(empty.phase=='reveal')
+assert(frame(empty,38)>0)
+frame(empty,39); assert(empty.phase=='reveal')
 empty:onCloseWidget()
 
 now=0
