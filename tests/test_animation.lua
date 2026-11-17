@@ -1,6 +1,6 @@
 local now,top,scheduled=0,nil,{}
 local refreshes={}
-local UI={setDirty=function(_,_,mode) refreshes[#refreshes+1]=mode end,
+local UI={setDirty=function(_,_,mode,region) refreshes[#refreshes+1]={mode=mode,region=region} end,
     scheduleIn=function(_,delay,fn) scheduled[fn]=now+delay end,
     unschedule=function(_,fn) scheduled[fn]=nil end,getTopmostVisibleWidget=function() return top end}
 local function stub(name,value) package.loaded[name]=value end
@@ -41,6 +41,21 @@ function makeImage(w,h)
 end
 stub('ffi/blitbuffer',{COLOR_WHITE=255,COLOR_BLACK=0,Color8=function(v) return v end,new=makeImage})
 local Animation=require('riddlelocal/animation')
+
+local function frame(animation,at)
+    now=at
+    local before=#refreshes
+    animation:step()
+    for index=before+1,#refreshes do
+        local update=refreshes[index]
+        local region=update.region
+        assert(update.mode=='fast' and region,'every animation frame should use a regional fast refresh')
+        assert(region.x>=0 and region.y>=0 and region.w>=2 and region.h>=2)
+        assert(region.x+region.w<=animation.w and region.y+region.h<=animation.h)
+    end
+    return #refreshes-before
+end
+
 local image=makeImage(120,180); image:paintRect(55,55,3,35,0)
 local closed,write_swipes,automatic=0,0,0
 local a=Animation:new{image=image,ink_y=0,submission=true,leave=function(write,auto)
@@ -53,15 +68,15 @@ local swipe={handler='onGesture',args={{ges='swipe',direction='east',distance=60
 local idle=a.journal_controls
 assert(not a[1]); assert(a:handleEvent(tap) and a[1] and closed==0)
 now=5; idle.expire(); assert(not a[1])
-now=10; a:step(); assert(image:inkCount()>0)
+assert(frame(a,10)>0 and image:inkCount()>0)
 local paths={{{1,1},{2,3},{3,2}},{{7,6},{8,8},{9,6}}}
 a:setReply(paths,'reply-1',nil,{1,2})
 assert(a.phase=='absorb' and a.submission_active,'early reception must not discard submitted ink')
 now=34; a:step(); assert(a.phase=='absorb')
 now=40; a:step(); assert(a.phase=='reveal' and image:inkCount()==0)
-now=42; a:step(); assert(a.completed==0 and image:inkCount()>0)
-now=44; a:step(); assert(a.completed==1)
-now=48; a:step(); assert(a.phase=='reading' and a.hide_due==78)
+assert(frame(a,42)>0 and a.completed==0 and image:inkCount()>0)
+frame(a,44); assert(a.completed==1)
+frame(a,48); assert(a.phase=='reading' and a.hide_due==78)
 now=77; a:step(); assert(automatic==0)
 now=78; a:step(); assert(automatic==1 and write_swipes==1)
 local menus=0; a.open_menu=function() menus=menus+1 end
@@ -75,11 +90,14 @@ now=0; image=makeImage(120,180); image:paintRect(50,50,3,20,0)
 local empty=Animation:new{image=image,submission=true,leave=function() end}
 top=empty; now=40; empty:step()
 assert(empty.phase=='waiting' and image:inkCount()==0 and not empty.message_id)
-now=50; empty:step(); assert(image:inkCount()>0)
+assert(frame(empty,50)>=3 and image:inkCount()>0)
+assert(refreshes[#refreshes].region.w<=4 and refreshes[#refreshes].region.h<=8,
+    'waiting should refresh only the small regions around each drop')
 local waitingCount=image:inkCount()
 now=70; empty:step(); assert(image:inkCount()==waitingCount)
 empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='gather')
-now=72; empty:step(); assert(empty.phase=='reveal')
+assert(frame(empty,71)>0)
+frame(empty,72); assert(empty.phase=='reveal')
 empty:onCloseWidget()
 
 now=0
@@ -95,4 +113,6 @@ burned:onCloseWidget()
 local disabled=Animation:new{image=makeImage(120,180),paper_burn=false,leave=function() end}
 disabled:setReply(paths,'no-burn','burn',{2}); assert(disabled.phase=='reveal'); disabled:onCloseWidget()
 
-for _,mode in ipairs(refreshes) do assert(mode~='full','ink effects requested a flashing full refresh') end
+for _,update in ipairs(refreshes) do
+    assert(update.mode~='full' and update.mode~='flashui' and update.mode~='flashpartial')
+end

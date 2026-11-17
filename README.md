@@ -46,7 +46,7 @@ Spontaneous replies remain visible until a user gesture or another message repla
 
 **Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. Burning occurs only when a requested reply arrives with the explicit `effect: "burn"` instruction. Submitted pages are never selected randomly for burning, and spontaneous messages do not burn.
 
-The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. Ink diffusion uses sixteen shades of gray and partial updates; burning uses fast updates. These effects do not request a full-screen flashing refresh, but actual ghosting and fluidity depend on the device.
+The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. The ink lightens and darkens through black-and-white stippling. Animation uses KOReader's fast refresh on the affected regions, including the small areas around waiting drops. Ghosting and display cadence vary by device.
 
 ## Source layout
 

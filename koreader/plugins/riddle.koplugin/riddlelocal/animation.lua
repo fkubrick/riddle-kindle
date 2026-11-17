@@ -14,8 +14,7 @@ local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,40,30
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
-local colors={}
-for value=0,255,17 do colors[value]=BB.Color8(value) end
+local colors={[0]=BB.COLOR_BLACK,[255]=BB.COLOR_WHITE}
 
 function Animation:init()
     self.w,self.h=Screen:getWidth(),Screen:getHeight()
@@ -70,12 +69,26 @@ function Animation:beginReveal()
         self.started=self.started-time.s(self.reveal_seconds/#self.groups*.2)
     end
 end
+
+function Animation:refreshFrame(rect)
+    local bottom=self.journal_controls.visible and self.bottom or self.h
+    if rect.y>=bottom then return end
+    -- DU is KOReader's fast monochrome waveform on the Paperwhite 3.
+    -- Its driver drops updates narrower or shorter than two pixels.
+    local x=math.min(rect.x,self.w-2)
+    local y=math.min(rect.y,bottom-2)
+    UI:setDirty(self,"fast",Geom:new{
+        x=x,y=y,w=math.max(2,rect.x+rect.w-x),h=math.max(2,math.min(bottom,rect.y+rect.h)-y),
+    })
+end
+
 function Animation:startResponse()
     if not self.message_id then self.phase,self.started="waiting",time.now(); self.wait_drops={}; return end
     if self.play_burn then
         if self.wait_drops then
-            local area=FX.clearDrops(self.image,self.w,self.h,self.wait_drops,colors)
-            if area then UI:setDirty(self,"ui",Geom:new(area)) end
+            for _,region in ipairs(FX.clearDrops(self.image,self.wait_drops,colors)) do
+                self:refreshFrame(region)
+            end
         end
         self.wait_drops,self.drop_origins,self.gather_finished=nil,nil,nil
         self.play_burn=false
@@ -147,7 +160,7 @@ function Animation:step()
         self.covered_at=nil
     end
     local elapsed=time.to_s(now-self.started)
-    local rect,refresh=nil,"ui"
+    local rect
     local function dirty(region)
         if not region then return end
         if not rect then rect={x=region.x,y=region.y,w=region.w,h=region.h}; return end
@@ -166,7 +179,6 @@ function Animation:step()
             end
             dirty(FX.render(self.image,self.ink_plan,progress,colors))
         elseif phase=="burn" then
-            refresh="fast"
             dirty(Model.burn(self.image,self.burn_plan,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK))
             self.burn_progress=progress
         else
@@ -187,17 +199,23 @@ function Animation:step()
             else self:startResponse() end
         end
     elseif self.phase=="waiting" and self.wait_drops then
-        dirty(FX.waitDrops(self.image,self.w,self.h,(elapsed%20)/20,self.wait_drops,colors))
+        for _,region in ipairs(FX.waitDrops(self.image,self.w,self.h,(elapsed%20)/20,self.wait_drops,colors)) do
+            self:refreshFrame(region)
+        end
     elseif self.phase=="gather" then
         local progress=math.min(1,elapsed/2)
-        dirty(FX.gatherDrops(self.image,self.w,self.h,self.drop_origins,progress,self.wait_drops,colors,self.groups[1].paths))
+        local regions=FX.gatherDrops(self.image,self.w,self.h,self.drop_origins,progress,
+            self.wait_drops,colors,self.groups[1].paths)
+        for _,region in ipairs(regions) do self:refreshFrame(region) end
         if progress==1 then
             self.gather_finished=true
             self:beginReveal()
         end
     elseif self.phase=="reveal" then
         if self.gather_finished then
-            dirty(FX.clearDrops(self.image,self.w,self.h,self.wait_drops,colors))
+            for _,region in ipairs(FX.clearDrops(self.image,self.wait_drops,colors)) do
+                self:refreshFrame(region)
+            end
             self.gather_finished=nil
             self.drop_origins,self.wait_drops=nil,nil
         end
@@ -234,7 +252,7 @@ function Animation:step()
         self.leave(true,true)
         return
     end
-    if rect then UI:setDirty(self,refresh,Geom:new(rect)) end
+    if rect then self:refreshFrame(rect) end
     if self.phase=="reading" then
         if self.hide_due then UI:scheduleIn(math.max(FRAME,time.to_s(self.hide_due-now)),self.advance) end
     elseif self.phase~="waiting" or self.wait_drops then UI:scheduleIn(FRAME,self.advance) end

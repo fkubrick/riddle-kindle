@@ -10,19 +10,27 @@ local ink=makeImage(120,180)
 ink:paintRect(56,60,3,45,0)
 local original_w,original_h=coverage(ink)
 local plan=FX.prepare(ink,120,180)
-local palette={}; for value=0,255,17 do palette[value]=value end
+local palette={[0]=0,[255]=255}
 FX.render(ink,plan,0,palette)
 assert(ink.data[70][56]==0 and coverage(ink)==original_w,'phase zero must preserve sharp black ink')
 FX.render(ink,plan,.05,palette)
-assert(ink.data[70][57]<34,'a source pixel must stay dark during the first particle steps')
+assert(ink:inkCount()>100,'the original stroke should remain mostly intact at the start')
 FX.render(ink,plan,.4,palette)
 local wet_w,wet_h=coverage(ink)
 assert(wet_w>original_w and wet_h>original_h,'ink should spread outside its original strokes')
-assert(ink.data[70][57]>0 and ink.data[70][57]<255,'original ink must fade while spreading')
+local core_count=0
+for y=60,104 do
+    for x=56,58 do
+        if ink.data[y][x]==0 then core_count=core_count+1 end
+    end
+end
+assert(core_count>0 and core_count<135,'the original stroke should thin while ink spreads')
 local twin=makeImage(120,180); twin:paintRect(56,60,3,45,0)
 FX.render(twin,FX.prepare(twin,120,180),.4,palette)
 for y=0,179 do for x=0,119 do
-    assert(twin.data[y][x]==ink.data[y][x],'particle field must be deterministic')
+    local value=ink.data[y][x]
+    assert(value==0 or value==255,'the fast waveform requires black or white pixels')
+    assert(twin.data[y][x]==value,'particle field must be deterministic')
 end end
 FX.render(ink,plan,1,palette)
 assert(ink:inkCount()==0)
@@ -33,7 +41,7 @@ assert(ink.data[70][57]==0 and coverage(ink)==original_w,'inverse diffusion must
 
 local drops=makeImage(120,180); local drop_state={}
 local dirty=FX.waitDrops(drops,120,180,.25,drop_state,palette)
-assert(dirty and dirty.w>0 and #drop_state>=3,'waiting must return its changed bounds and draw drops')
+assert(#dirty==#drop_state and #drop_state>=3,'each waiting drop should update its own small region')
 assert(drops:inkCount()>0 and drops:inkCount()<120,'waiting drops should remain sparse')
 local origins={}
 for i,drop in ipairs(drop_state) do
@@ -63,5 +71,5 @@ assert(moved,'gather should move drops toward the reply paths')
 FX.gatherDrops(drops,120,180,origins,1,drop_state,palette,paths)
 assert(#drop_state==#origins,'phase one must leave final drops available to the reveal')
 for _,drop in ipairs(drop_state) do assert(drop.gray==0,'phase one drops should arrive as black ink') end
-local cleaned=FX.clearDrops(drops,120,180,drop_state,palette)
-assert(cleaned and #drop_state==0 and drops:inkCount()==0,'clearDrops should erase and empty the active state')
+local cleaned=FX.clearDrops(drops,drop_state,palette)
+assert(#cleaned==#origins and #drop_state==0 and drops:inkCount()==0,'clearDrops should erase each drop')
