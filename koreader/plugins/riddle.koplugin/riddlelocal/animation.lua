@@ -12,6 +12,7 @@ local Animation = Input:extend{
     modal = true, covers_fullscreen = true, stop_events_propagation = true, disable_double_tap = true,
 }
 local ERASE_SECONDS, WRITE_SECONDS, FRAME_SECONDS = 3.8, 18, .18
+local WAIT_WRITE_SECONDS, WAIT_HOLD_SECONDS = 10, 4
 local ERASE_STAGES = 14
 require("random") -- KOReader seeds math.random once per process.
 local waiting_order, waiting_count, last_waiting = {},0,nil
@@ -47,13 +48,20 @@ function Animation:init()
         end
     end)
     if Device:hasKeys() then self.key_events = { Close = { { Device.input.group.Back } } } end
+    if self.waiting_paths then
+        self.waiting_index=nextWaiting(#self.waiting_paths)
+        self.paths=self.waiting_paths[self.waiting_index]
+        self.write_seconds=WAIT_WRITE_SECONDS
+    end
     if self.paths then
         self.paths,self.total,self.radius = Model.fit(self.paths,self.w,self.h,Screen:scaleBySize(26))
     else self.paths,self.total,self.radius = {},0,2 end
     self.pen_plan,self.pen_distance = Model.penPlan(self.paths,self.radius)
     self.erase_pixels = Model.dissolve(self.image,self.w,self.h,self.ink_y,ERASE_STAGES)
     self.started = time.now()
-    if self.waiting_paths then self.waiting_due=self.started+time.s(ERASE_SECONDS+8) end
+    if self.waiting_paths then
+        self.waiting_due=self.started+time.s(ERASE_SECONDS+WAIT_WRITE_SECONDS+WAIT_HOLD_SECONDS)
+    end
     self.stage,self.drawn = -1,0
     self.advance = function() self:step() end
 end
@@ -97,8 +105,8 @@ function Animation:step()
         self.pen_plan,self.pen_distance=Model.penPlan(self.paths,self.radius)
         if not self.burning then self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,ERASE_STAGES) end
         self.started,self.stage,self.drawn,self.segment_drawn=time.now(),-1,0,nil
-        self.write_seconds=28
-        self.waiting_due=self.started+time.s(self.erase_seconds+self.write_seconds+8)
+        self.write_seconds=WAIT_WRITE_SECONDS
+        self.waiting_due=self.started+time.s(self.erase_seconds+self.write_seconds+WAIT_HOLD_SECONDS)
     end
     local elapsed = time.to_s(time.now()-self.started)
     local erase_seconds = self.erase_seconds or ERASE_SECONDS

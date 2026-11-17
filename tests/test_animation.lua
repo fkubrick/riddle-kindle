@@ -91,12 +91,15 @@ image:fill(255)
 local waiting=Animation:new{image=image,ink_y=0,
     waiting_paths={{{{1,1},{3,4},{6,2}}},{{{1,2},{4,5},{7,1}}}},leave=function() end}
 top=waiting; waiting:onShow()
-now=10; waiting:step(); assert(waiting.total==0 and not waiting.message_id)
-now=13; waiting:step(); assert(waiting.total==3 and not waiting.message_id)
 local first_phrase=waiting.waiting_index
+local before_waiting=stamps
+now=3.6; waiting:step(); assert(stamps==before_waiting and not waiting.message_id)
+now=10; waiting:step(); assert(stamps>before_waiting and waiting.drawn<waiting.total)
+now=14; waiting:step(); assert(waiting.drawn==waiting.total and not waiting.burning)
+assert(waiting.waiting_due>17 and waiting.waiting_due<18)
 local due=waiting.waiting_due
 waiting:onSuspend(); now=50; waiting:onResume()
-assert(waiting.waiting_due==due+37)
+assert(waiting.waiting_due==due+36)
 now=waiting.waiting_due+.1; waiting:step(); assert(waiting.waiting_index~=first_phrase and waiting.burning)
 image:fill(0)
 now=waiting.started+3; waiting:step()
@@ -114,7 +117,8 @@ for index=1,12 do
     if (index-1)%4==0 then seen={} end
     image:fill(255)
     local dialog=Animation:new{image=image,ink_y=0,waiting_paths=catalogue,leave=function() end}
-    top=dialog; now=dialog.waiting_due+.1; dialog:step()
+    top=dialog; now=dialog.started+14; dialog:step()
+    assert(dialog.drawn==dialog.total)
     assert(not seen[dialog.waiting_index] and dialog.waiting_index~=previous)
     seen[dialog.waiting_index],previous=true,dialog.waiting_index
     dialog:onCloseWidget()
