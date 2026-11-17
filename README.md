@@ -38,7 +38,7 @@ The user-facing controls are currently French. The plugin receives replies from 
 
 ## Ink effects
 
-After queuing, the submitted ink diffuses across the page for forty seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
+After queuing, the submitted ink diffuses across the page for thirty-five seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
 
 Ordinary requested replies emerge in small groups of words, from diffuse ink to sharp letters. Their complete layout stays fixed. A reply remains visible for thirty seconds after it has fully appeared, then clears. Swipe left from the right edge to replay it. A draft retained while reading stays intact and does not send when the reply expires; writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 

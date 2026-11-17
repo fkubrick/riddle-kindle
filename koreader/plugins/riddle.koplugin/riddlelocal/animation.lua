@@ -10,7 +10,7 @@ local Model = require("riddlelocal/model")
 local FX = require("riddlelocal/inkfx")
 local Idle = require("riddlelocal/idlecontrols")
 require("random")
-local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,40,30
+local FRAME, ABSORB_SECONDS, READ_SECONDS = .6,35,30
 local Animation = Input:extend{
     modal=true,covers_fullscreen=true,stop_events_propagation=true,disable_double_tap=true,
 }
@@ -64,7 +64,7 @@ function Animation:beginReveal()
     self.phase,self.started="reveal",time.now()
     self.completed=0
     self.group_plan=nil
-    self.reveal_seconds=math.max(8,#self.groups*2.4)
+    self.reveal_seconds=math.max(7,#self.groups*2)
     if self.gather_finished then
         self.started=self.started-time.s(self.reveal_seconds/#self.groups*.2)
     end
