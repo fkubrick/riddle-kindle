@@ -1,0 +1,12 @@
+settings/
+**/settings/
+**/alfred-ink.json
+**/*state.json
+**/*draft.json
+.env
+.env.*
+*.log
+__pycache__/
+*.pyc
+.venv/
+*.zip
