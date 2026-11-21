@@ -10,6 +10,7 @@ local BB = require("ffi/blitbuffer")
 local Screen = require("device").screen
 local View = Base:extend{}
 local QUIET, POLL, RETRY = 5, 5, 15
+local MAILBOX_POLL, MAILBOX_RETRY = 30, 60
 local MAILBOX = "mailbox"
 
 local function copy(items)
@@ -154,7 +155,10 @@ function View:showReply(manual)
     end
     local persistent = reply.id == reply.message_id
     local scene = Reply.scene(reply.text)
-    if reply.paths or scene then
+    if not scene and not reply.paths and not reply.image and self.paper_burn and reply.effect == "burn" then
+        scene = {reply.text}
+    end
+    if reply.paths or scene or reply.image then
         if dialog and not dialog.setReply then
             UI:close(dialog)
             self.reply_view, dialog = nil, nil
@@ -164,7 +168,7 @@ function View:showReply(manual)
             blank:fill(BB.COLOR_WHITE)
             dialog = self:animation(blank)
         end
-        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends, persistent, scene)
+        dialog:setReply(reply.paths, reply.message_id, reply.effect, reply.block_ends, persistent, scene, reply.image)
     else
         if dialog and dialog.submission_active then return true end
         if dialog then
@@ -186,6 +190,7 @@ function View:showReply(manual)
 end
 
 function View:onResume()
+    if self.request_due then self.request_due[MAILBOX] = nil end
     Base.onResume(self)
     if self.reply_view then
         self:uninstallRawFinger()
@@ -251,16 +256,21 @@ function View:startRequest(operation, arg)
             end
         elseif result and result.reply then
             saved = self:saveReply(arg, result.reply)
+            if request.mailbox and saved then
+                self.mailbox_image_id = result.reply.image and result.reply.message_id or nil
+            end
         end
         if result and saved and result.reply and arg then
             self.request_due[key] = nil
         else
-            self.request_due[key] = time.now() + time.s(result and saved and POLL or RETRY)
+            local interval = request.mailbox and (result and saved and MAILBOX_POLL or MAILBOX_RETRY)
+                or (result and saved and POLL or RETRY)
+            self.request_due[key] = time.now() + time.s(interval)
         end
         self:updateStatus()
         self:wake(0)
     end
-    local cancel = Net.start(self.token, operation, arg, complete)
+    local cancel = Net.start(self.token, operation, arg, complete, request.mailbox and self.mailbox_image_id)
     if self.request ~= request then return end
     if cancel then self.cancel_request = cancel else complete(nil) end
 end

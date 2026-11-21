@@ -4,11 +4,17 @@ A handwritten diary for jailbroken Kindle readers. Write on the page, watch the 
 
 This is the Kindle client and its handwriting renderer. A compatible HTTPS relay and a separate assistant are required for replies. The relay protocol is documented in [PROTOCOL.md](PROTOCOL.md). The original riddle application targets reMarkable hardware.
 
+**Prerequisite:** your Kindle must already be jailbroken before you install this project.
+
+## Connect an assistant
+
+I use OpenAI Dot in my personal setup. This project works with any LLM you connect through a compatible relay. The assistant needs a way to read each incoming page, either as an image or as transcribed text, and submit its answer to your relay. The integration runs outside the Kindle.
+
 ## Status
 
 Writing, persisted outgoing pages, connected replies, swipe navigation, burning holes and the simultaneous ink reveal have been used on a jailbroken Kindle Paperwhite 3 running firmware 5.12.4. The four-second reply fade, scenes and restored-draft behavior have passed local tests. Other devices are untested.
 
-The ink renderer is experimental. E-ink refresh modes can leave ghosting and the physical display cadence varies. The plugin keeps the reader awake while open, which increases power use.
+The ink renderer is experimental. E-ink refresh modes can leave ghosting and the physical display cadence varies. The journal follows KOReader's normal standby settings.
 
 ## Install
 
@@ -34,21 +40,21 @@ Replies replace the previous displayed reply automatically. A reply arriving whi
 
 If the main journal state is empty or missing after an interrupted save, opening the journal can recover a fully validated pending `.part` file. A valid main state always takes precedence. Nonempty damaged files and incomplete pending writes are left untouched for manual recovery.
 
-The user-facing controls are currently French. The plugin receives replies from the configured relay every five seconds when idle. Assistant response latency depends on the external assistant and its notification mechanism.
+The user-facing controls are currently French. While awake, the journal checks for replies to pending pages every five seconds and checks the spontaneous mailbox every thirty seconds when idle. It resumes checking after wake. Assistant response latency depends on the external assistant and its notification mechanism.
 
 ## Ink effects
 
-After queuing, the submitted ink diffuses across the page for seven seconds. Network requests continue during diffusion. If no reply has arrived when it ends, small, discreet drops loop every twenty seconds until one arrives. There are no prerecorded waiting phrases. Returning to writing cancels the visual effect without cancelling delivery.
+After queuing, the submitted ink diffuses across the page for seven seconds. Network requests continue during diffusion. If no reply has arrived when it ends, the page stays still. Returning to writing cancels the visual effect without cancelling delivery.
 
 All words in a handwritten reply emerge together over six seconds, from diffuse ink to sharp letters. Replies to journal pages remain visible for thirty seconds after they have fully appeared, then the ink disperses over four seconds. Swipe left from the right edge to replay the last reply. A draft retained while reading stays intact and does not send when the reply expires. Writing another stroke resumes its inactivity timer. Unsupported glyphs use the text fallback.
 
-Spontaneous replies remain visible until a user gesture or another message replaces them; they do not expire automatically.
+Spontaneous text and images remain visible until a user gesture or another message replaces them. Images use a grayscale pixel grid, centered and scaled to fit the screen.
 
 To stage an occasional dramatic pause, send a reply such as `[[scene]] No, || but I can show you` in the usual reply field. Each fragment before the last remains readable for three seconds and dissolves over three seconds. The final fragment follows the normal reply timing.
 
-**Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. Burning occurs only when a requested reply arrives with the explicit `effect: "burn"` instruction. Submitted pages are never selected randomly for burning, and spontaneous messages do not burn.
+**Paper burning is optional and disabled by default.** To enable it, add `"paper_burn": true` to your private `koreader/settings/alfred-ink.json` and reopen the journal. A relay can select the effect with `effect: "burn"`. For spontaneous messages, send `effect: "dissolve"` to skip the burn.
 
-The burn opens scattered holes with irregular dark edges that grow and merge until the page is white. The pattern varies each time. The ink lightens and darkens through black-and-white stippling. Animation uses KOReader's fast refresh on the affected regions, including the small areas around waiting drops. Ghosting and display cadence vary by device.
+The burn opens scattered holes with irregular dark edges that reveal the text or image beneath them. The content is fully visible after eight seconds. Animation uses KOReader's fast refresh on the affected regions.
 
 ## Source layout
 

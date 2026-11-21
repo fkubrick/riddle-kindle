@@ -30,6 +30,11 @@ function makeImage(w,h)
     function image:paintRect(x,y,rw,rh,color)
         for j=y,y+rh-1 do for i=x,x+rw-1 do self:setPixel(i,j,color) end end
     end
+    function image:blitFrom(source,x,y,sx,sy,rw,rh)
+        for j=0,rh-1 do
+            for i=0,rw-1 do self:setPixel(x+i,y+j,source.data[sy+j][sx+i]) end
+        end
+    end
     function image:paintCircle(cx,cy,r,color)
         for y=math.max(0,cy-r),math.min(h-1,cy+r) do for x=math.max(0,cx-r),math.min(w-1,cx+r) do
             if (x-cx)^2+(y-cy)^2<=r*r then self:setPixel(x,y,color) end
@@ -99,21 +104,16 @@ assert(menus==1 and a:handleEvent(swipe) and write_swipes==2)
 a:onSuspend(); assert(not scheduled[a.advance]); now=100; a:onResume(); assert(scheduled[a.advance])
 a:onCloseWidget(); assert(image.freed and not scheduled[a.advance])
 
--- A late answer gathers the visible waiting drops before the reply emerges.
+-- The waiting screen has no animation and a reply restarts rendering.
 now=0; image=makeImage(120,180); image:paintRect(50,50,3,20,0)
 local empty=Animation:new{image=image,submission=true,leave=function() end}
 top=empty; now=7; empty:step()
 assert(empty.phase=='waiting' and image:inkCount()==0 and not empty.message_id)
-assert(frame(empty,17)>=3 and image:inkCount()>0)
-assert(refreshes[#refreshes].region.w<=4 and refreshes[#refreshes].region.h<=8,
-    'waiting should refresh only the small regions around each drop')
-local waitingCount=image:inkCount()
-now=37; empty:step(); assert(image:inkCount()==waitingCount)
-empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='gather')
-assert(frame(empty,38)>0)
-frame(empty,39); assert(empty.phase=='reveal')
-frame(empty,41); assert(image:inkCount(0,59)>0 and image:inkCount(60,119)>0)
-frame(empty,45); assert(empty.phase=='reading' and empty.hide_due==75)
+assert(not scheduled[empty.advance])
+assert(frame(empty,37)==0 and not scheduled[empty.advance] and image:inkCount()==0)
+empty:setReply(paths,'after-wait',nil,{1,2}); assert(empty.phase=='reveal' and scheduled[empty.advance])
+frame(empty,39); assert(image:inkCount(0,59)>0 and image:inkCount(60,119)>0)
+frame(empty,43); assert(empty.phase=='reading' and empty.hide_due==73)
 empty:onCloseWidget()
 
 now=0
@@ -121,13 +121,62 @@ local burned=Animation:new{image=makeImage(120,180),paper_burn=true,leave=functi
 top=burned
 burned:setReply(paths,'spontaneous','burn',{1,2},true)
 assert(burned.phase=='burn')
-now=8; burned:step(); now=14; burned:step(); now=160; burned:step()
+local content=burned.burn_content
+now=4; burned:step()
+local revealed,hidden=0,0
+for y=0,179 do for x=0,119 do
+    if content.data[y][x]==0 then
+        if burned.image.data[y][x]==0 then revealed=revealed+1 else hidden=hidden+1 end
+    end
+end end
+assert(revealed>0 and hidden>0,'the burn exposes part of the actual text before the end')
+now=8; burned:step()
+assert(burned.phase=='reading' and content.freed and not burned.burn_content)
+for y=0,179 do for x=0,119 do assert(burned.image.data[y][x]==content.data[y][x]) end end
+now=160; burned:step()
 assert(burned.phase=='reading' and not burned.hide_due)
 burned:setReply(paths,'newer',nil,{2}); now=161; burned:step(); now=167; burned:step()
 assert(burned.hide_due==197)
 burned:onCloseWidget()
 local disabled=Animation:new{image=makeImage(120,180),paper_burn=false,leave=function() end}
 disabled:setReply(paths,'no-burn','burn',{2}); assert(disabled.phase=='reveal'); disabled:onCloseWidget()
+
+local BB=require('ffi/blitbuffer')
+BB.fromstring=function(w,h,_,bytes)
+    assert(w==2 and h==3 and #bytes==6)
+    return {
+        scale=function(_,rw,rh)
+            local result=makeImage(rw,rh)
+            result:fill(bytes:byte(1))
+            return result
+        end,
+        free=function() end,
+    }
+end
+now=0
+local picture=Animation:new{image=makeImage(120,180),paper_burn=true,leave=function() end}
+top=picture
+local raster={width=2,height=3,pixels='777777'}
+picture:setReply(nil,'picture','burn',nil,true,nil,raster)
+now=4; picture:step()
+local grays,whites,edges=0,0,0
+for y=0,179 do for x=0,119 do
+    local pixel=picture.image.data[y][x]
+    if pixel==119 then grays=grays+1
+    elseif pixel==255 then whites=whites+1
+    elseif pixel==0 then edges=edges+1 end
+end end
+assert(grays>0 and whites>0 and edges>0,'image, paper and rim coexist during the burn')
+now=8; picture:step()
+assert(picture.image_shown and picture.phase=='reading' and not picture.hide_due)
+for y=0,179 do for x=0,119 do assert(picture.image.data[y][x]==119) end end
+picture:setReply(nil,'picture-2','burn',nil,true,nil,raster)
+local replaced=picture.burn_content
+picture:setReply(paths,'next-text','burn',nil,true)
+assert(replaced.freed and picture.phase=='burn')
+local interrupted=picture.burn_content
+picture:onCloseWidget()
+assert(interrupted.freed)
 
 -- A scene holds its first text and lets it disperse before rendering the next.
 local fragments={"Non,","mais je peux te montrer"}

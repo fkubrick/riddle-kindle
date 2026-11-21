@@ -15,14 +15,15 @@ function Net.interpret(id,code,body)
     local paths=r.paths
     if paths==Json.null then paths=nil end
     if paths~=nil and not OnlineState.validPaths(paths) then return nil end
+    if r.image~=nil and (id or paths~=nil or not OnlineState.validImage(r.image)) then return nil end
     if r.effect~=nil and r.effect~="burn" and r.effect~="dissolve" then return nil end
     if r.block_ends~=nil and not OnlineState.validBlocks(paths,r.block_ends) then return nil end
     if r.timestamp~=nil and (type(r.timestamp)~="number" or r.timestamp~=r.timestamp or
             r.timestamp<=0 or r.timestamp==math.huge or r.timestamp%1~=0) then return nil end
     return {reply={id=r.id,message_id=r.message_id,text=r.text,paths=paths,timestamp=r.timestamp,
-        effect=r.effect or (not id and "burn" or nil),block_ends=r.block_ends}}
+        effect=r.effect or (not id and "burn" or nil),block_ends=r.block_ends,image=r.image}}
 end
-function Net.start(token,op,arg,done)
+function Net.start(token,op,arg,done,known_image)
     local origin,host=Original.endpoint()
     if not origin then return nil end
     if op=="send" then return Original.start(token,op,arg,done) end
@@ -32,11 +33,14 @@ function Net.start(token,op,arg,done)
         local Http=require("ink/sync/http")
         Http.TIMEOUT_BLOCK,Http.TIMEOUT_TOTAL=4,8
         Http.MAX_BODY=262144
+        local headers={Authorization="Bearer "..token,Accept="application/json"}
+        if not arg and State.uuid(known_image) then headers["If-None-Match"]='"'..known_image..'"' end
         local r=Http.request{
             url=origin.."/native/reply-paths"..(arg and ("?id="..arg) or ""),
             hosts={host},method="GET",
-            headers={Authorization="Bearer "..token,Accept="application/json"},
+            headers=headers,
         }
+        if r and r.code==304 and headers["If-None-Match"] then return Json.encode{waiting=true} end
         local result=r and Net.interpret(arg,r.code,r.body)
         return result and Json.encode(result) or nil
     end,function(body)

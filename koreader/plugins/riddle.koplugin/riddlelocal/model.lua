@@ -72,26 +72,30 @@ function M.burnPlan(w, h, seed)
     return plan
 end
 
--- Each patch is painted at most twice: its black rim, then its white interior.
+-- Each patch is painted at most twice: its black rim, then the content below.
 -- Skipped frames go straight to the current frontier without leaving old rims.
-function M.burn(image, plan, progress, previous, white, black)
+function M.burn(image, plan, progress, previous, content, black)
     local current=math.min(plan.stages,math.floor(progress*plan.stages))
     local old=math.floor(previous*plan.stages)
     if current<=old then return end
     local w,h,grain=plan.w,plan.h,plan.grain
     local x0,y0,x1,y1=w,h,0,0
-    local function paint(first,last,color)
+    local function paint(first,last,rim)
         for stage=first,last do
             for _,pixel in ipairs(plan[stage]) do
                 local x,y=pixel%w,math.floor(pixel/w)
                 local width,height=math.min(grain,w-x),math.min(grain,h-y)
-                image:paintRect(x,y,width,height,color)
+                if rim then
+                    image:paintRect(x,y,width,height,black)
+                else
+                    image:blitFrom(content,x,y,x,y,width,height)
+                end
                 x0,y0,x1,y1=math.min(x0,x),math.min(y0,y),math.max(x1,x+width),math.max(y1,y+height)
             end
         end
     end
-    paint(math.max(1,old-plan.rim+1),math.max(0,current-plan.rim),white)
-    paint(math.max(old+1,current-plan.rim+1),current,black)
+    paint(math.max(1,old-plan.rim+1),math.max(0,current-plan.rim),false)
+    paint(math.max(old+1,current-plan.rim+1),current,true)
     if x1>x0 then return {x=x0,y=y0,w=x1-x0,h=y1-y0} end
 end
 

@@ -28,6 +28,12 @@ assert(LiveNet.interpret(nil,200,Json.encode(data)).waiting)
 data.reply_to = nil
 assert(LiveNet.interpret(nil,200,Json.encode(data)).reply.message_id==msg)
 assert(LiveNet.interpret(nil,200,Json.encode(data)).reply.effect=="burn")
+data.image={width=400,height=540,pixels=("0f"):rep(108000)}
+local image_reply=assert(LiveNet.interpret(nil,200,Json.encode(data))).reply
+assert(image_reply.image.pixels==data.image.pixels)
+data.image.pixels="z"
+assert(not LiveNet.interpret(nil,200,Json.encode(data)))
+data.image=nil
 
 -- The old draft, queued UUID, acceptance flag and unread paths survive migration.
 local legacy = State.new()

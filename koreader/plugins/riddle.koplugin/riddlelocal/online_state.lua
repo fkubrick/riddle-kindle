@@ -32,10 +32,20 @@ function State.size(session)
     return #session.outbox + #session.replies + (session.reply and 1 or 0)
 end
 
+function State.validImage(image)
+    if type(image) ~= "table" then return false end
+    local w, h, pixels = image.width, image.height, image.pixels
+    return type(w) == "number" and w >= 1 and w <= 400 and w % 1 == 0
+        and type(h) == "number" and h >= 1 and h <= 540 and h % 1 == 0
+        and type(pixels) == "string" and #pixels == w * h and not pixels:find("[^0-9a-f]")
+end
+
 local function readReply(reply)
     if not Ink.validReply(reply) then return nil end
     if reply.paths == Json.null then reply.paths = nil end
     if reply.paths ~= nil and not State.validPaths(reply.paths) then return nil end
+    if reply.image ~= nil and (reply.id ~= reply.message_id or reply.paths ~= nil
+            or not State.validImage(reply.image)) then return nil end
     if reply.effect~=nil and reply.effect~="burn" and reply.effect~="dissolve" then return nil end
     if reply.block_ends~=nil and not State.validBlocks(reply.paths,reply.block_ends) then return nil end
     return reply

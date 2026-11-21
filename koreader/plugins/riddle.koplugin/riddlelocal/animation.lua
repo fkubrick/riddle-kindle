@@ -61,8 +61,54 @@ function Animation:onShow()
     return true
 end
 
+function Animation:drawContent(target)
+    local raster=self.raster
+    if raster then
+        local bytes=raster.pixels:gsub(".",function(hex) return string.char(tonumber(hex,16)*17) end)
+        local source=BB.fromstring(raster.width,raster.height,BB.TYPE_BB8,bytes,raster.width)
+        local scale=math.min(self.w/raster.width,self.h/raster.height)
+        local w,h=math.max(1,math.floor(raster.width*scale)),math.max(1,math.floor(raster.height*scale))
+        local fitted=source:scale(w,h)
+        target:blitFrom(fitted,math.floor((self.w-w)/2),math.floor((self.h-h)/2),0,0,w,h)
+        fitted:free()
+        source:free()
+        return
+    end
+    if self.scene then
+        self.reply_bounds=require("riddlelocal/reply").drawSceneFragment(
+            target,self.w,self.h,self.scene[self.fragment])
+    else
+        FX.drawPaths(target,self.paths,self.radius,BB.COLOR_BLACK)
+        self.reply_bounds=FX.bounds(self.paths,self.w,self.h,self.radius)
+    end
+end
+
+function Animation:readContent(now)
+    self.phase="reading"
+    self.image_shown=self.raster~=nil
+    if self:hasMoreFragments() then
+        self.hide_due=now+time.s(SCENE_HOLD_SECONDS)
+    elseif not self.persistent then
+        self.hide_due=now+time.s(READ_SECONDS)
+    end
+end
+
 function Animation:beginReveal()
+    if self.raster then
+        self.image:fill(BB.COLOR_WHITE)
+        self:drawContent(self.image)
+        self:readContent(time.now())
+        UI:setDirty(self,"ui",self.dimen)
+        return
+    end
     self.phase,self.started="reveal",time.now()
+end
+
+function Animation:freeBurnContent()
+    if self.burn_content then
+        self.burn_content:free()
+        self.burn_content=nil
+    end
 end
 
 function Animation:hasMoreFragments()
@@ -76,47 +122,45 @@ function Animation:refreshFrame(rect)
 end
 
 function Animation:startResponse()
-    if not self.message_id then self.phase,self.started="waiting",time.now(); self.wait_drops={}; return end
+    if not self.message_id then self.phase="waiting"; return end
     if self.play_burn then
-        if self.wait_drops then
-            for _,region in ipairs(FX.clearDrops(self.image,self.wait_drops,colors)) do
-                self:refreshFrame(region)
-            end
-        end
-        self.wait_drops,self.drop_origins=nil,nil
         self.play_burn=false
-        self.phase,self.started,self.duration="burn",time.now(),8
+        self.burn_content=BB.new(self.w,self.h,BB.TYPE_BB8)
+        self.burn_content:fill(BB.COLOR_WHITE)
+        self:drawContent(self.burn_content)
         self.burn_plan=Model.burnPlan(self.w,self.h,math.random(10000))
         self.burn_progress=0
-    elseif self.paths and self.wait_drops and next(self.wait_drops) then
-        self.phase,self.started="gather",time.now()
-        self.drop_origins={}
-        for index,drop in ipairs(self.wait_drops) do
-            self.drop_origins[index]={x=drop.x,y=drop.y,w=drop.w,h=drop.h,gray=drop.gray}
-        end
+        self.phase,self.started,self.duration="burn",time.now(),8
     else self:beginReveal() end
 end
 
 -- The relay still supplies block boundaries for older clients.
-function Animation:setReply(paths,id,effect,_block_ends,persistent,scene)
+function Animation:setReply(paths,id,effect,_block_ends,persistent,scene,raster)
     if self.message_id==id then return end
+    self:freeBurnContent()
     self.message_id=id
     self.persistent=persistent==true
     self.hide_due=nil
     self.scene,self.fragment=scene,1
+    self.raster=raster
     self.paths,self.radius=nil,nil
-    if not scene then
+    if not scene and not raster then
         local fitted, _, radius=Model.fit(paths,self.w,self.h,Screen:scaleBySize(26))
         self.paths,self.radius=fitted,radius
     end
     self.play_burn=self.paper_burn==true and effect=="burn"
     -- Receive in parallel; present the newest reply after the submitted ink is absorbed.
     if not self.submission_active then
-        if self.phase=="waiting" then self:startResponse()
+        if self.image_shown or self.phase=="burn" then
+            self.image_shown=false
+            self.burn_plan=nil
+            self.image:fill(BB.COLOR_WHITE)
+            UI:setDirty(self,"ui",self.dimen)
+            self:startResponse()
+        elseif self.phase=="waiting" then self:startResponse()
         else
             self.phase,self.started,self.duration="erase",time.now(),.6
             self.erase_pixels=Model.dissolve(self.image,self.w,self.h,0,14)
-            self.wait_drops,self.drop_origins=nil,nil
             self.erase_stage=-1
             self.ink_plan,self.burn_plan=nil,nil
         end
@@ -159,7 +203,7 @@ function Animation:step()
             end
             dirty(FX.render(self.image,self.ink_plan,progress,colors))
         elseif phase=="burn" then
-            dirty(Model.burn(self.image,self.burn_plan,progress,self.burn_progress,BB.COLOR_WHITE,BB.COLOR_BLACK))
+            dirty(Model.burn(self.image,self.burn_plan,progress,self.burn_progress,self.burn_content,BB.COLOR_BLACK))
             self.burn_progress=progress
         else
             local stage=math.min(13,math.floor(progress*14))
@@ -185,38 +229,16 @@ function Animation:step()
                 self.submission_active=false
                 self.phase="waiting"
                 self:startResponse()
-            elseif phase=="burn" then self:beginReveal()
+            elseif phase=="burn" then
+                self:freeBurnContent()
+                self:readContent(now)
             else self:startResponse() end
         end
-    elseif self.phase=="waiting" and self.wait_drops then
-        for _,region in ipairs(FX.waitDrops(self.image,self.w,self.h,(elapsed%20)/20,self.wait_drops,colors)) do
-            self:refreshFrame(region)
-        end
-    elseif self.phase=="gather" then
-        local progress=math.min(1,elapsed/2)
-        local regions=FX.gatherDrops(self.image,self.w,self.h,self.drop_origins,progress,
-            self.wait_drops,colors,self.paths)
-        for _,region in ipairs(regions) do self:refreshFrame(region) end
-        if progress==1 then
-            self:beginReveal()
-        end
     elseif self.phase=="reveal" then
-        if self.wait_drops then
-            for _,region in ipairs(FX.clearDrops(self.image,self.wait_drops,colors)) do
-                self:refreshFrame(region)
-            end
-            self.drop_origins,self.wait_drops=nil,nil
-        end
         if not self.ink_plan then
             local scratch=BB.new(self.w,self.h,BB.TYPE_BB8)
             scratch:fill(BB.COLOR_WHITE)
-            if self.scene then
-                self.reply_bounds=require("riddlelocal/reply").drawSceneFragment(
-                    scratch,self.w,self.h,self.scene[self.fragment])
-            else
-                FX.drawPaths(scratch,self.paths,self.radius,BB.COLOR_BLACK)
-                self.reply_bounds=FX.bounds(self.paths,self.w,self.h,self.radius)
-            end
+            self:drawContent(scratch)
             self.ink_plan=FX.prepare(scratch,self.w,self.h,self.reply_bounds)
             scratch:free()
         end
@@ -225,12 +247,7 @@ function Animation:step()
         dirty(FX.render(self.image,self.ink_plan,1-progress,colors))
         if progress==1 then
             self.ink_plan=nil
-            self.phase="reading"
-            if self:hasMoreFragments() then
-                self.hide_due=now+time.s(SCENE_HOLD_SECONDS)
-            elseif not self.persistent then
-                self.hide_due=now+time.s(READ_SECONDS)
-            end
+            self:readContent(now)
         end
     elseif self.phase=="reading" and self.hide_due and now>=self.hide_due then
         self.ink_plan=FX.prepare(self.image,self.w,self.h,self.reply_bounds)
@@ -244,7 +261,7 @@ function Animation:step()
     elseif self.phase=="fade" then
         local remaining=time.to_s(self.started+time.s(self.duration)-time.now())
         UI:scheduleIn(math.max(0,math.min(FRAME,remaining)),self.advance)
-    elseif self.phase~="waiting" or self.wait_drops then UI:scheduleIn(FRAME,self.advance) end
+    elseif self.phase~="waiting" then UI:scheduleIn(FRAME,self.advance) end
 end
 
 function Animation:paintTo(bb,x,y)
@@ -271,6 +288,7 @@ function Animation:onSetDimensions() self.leave(false); return true end
 function Animation:onCloseWidget()
     self.closed=true; UI:unschedule(self.advance); self.journal_controls:hide()
     self.ink_plan,self.burn_plan=nil,nil
+    self:freeBurnContent()
     self.image:free(); self.controls:free()
 end
 return Animation

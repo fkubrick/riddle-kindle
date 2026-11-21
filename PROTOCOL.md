@@ -16,11 +16,11 @@ With `paths`, optional `block_ends` is an array of strictly increasing one-based
 
 For an optional scene, use `[[scene]]` at the start of `text`, followed by two or more nonempty fragments separated by `||`. The relay passes the text through its usual reply endpoint. The Kindle renders the fragments locally. Each fragment before the last is held for three seconds and fades for three seconds. The final fragment follows the usual reading and expiry rules.
 
-Optional `effect` is either `"dissolve"` (ordinary ink) or `"burn"` (burn before revealing). The client honors burn only when its private `paper_burn` option is enabled. Persist these fields alongside the reply so retries and replays retain their presentation. The text-only fallback does not support these vector effects.
+Optional `effect` is either `"dissolve"` (ordinary ink or direct image display) or `"burn"` (reveal the content through growing holes). The client honors burn only when its private `paper_burn` option is enabled. Persist these fields alongside the reply so retries and replays retain their presentation.
 
 Without `id`, the same endpoint represents the spontaneous-message mailbox. A ready spontaneous message has `id` equal to `message_id` and no `reply_to`. A page-specific message in the mailbox with `reply_to` is ignored there and fetched through its page ID. An empty mailbox returns `{ "status": "pending" }`.
 
-Spontaneous replies without an explicit effect default to `"burn"` in the client. This protocol currently carries text and vector handwriting only, not attached images.
+Spontaneous replies without an explicit effect default to `"burn"` in the client. A spontaneous reply may include an `image` object instead of `paths`, with integer `width` and `height` from 1 to 400 and 1 to 540 respectively, and a `pixels` string of exactly `width * height` lowercase hexadecimal digits. Pixels are in row-major order, with `0` for black and `f` for white. Include a nonempty fallback `text` for older clients. A relay can return the quoted `message_id` as its `ETag` and respond with HTTP 304 when a later mailbox request sends that same value in `If-None-Match`.
 
 The bridge also defines GET `/native/reply`, a text-only variant retained for compatibility. The journal uses `/native/reply-paths`.
 

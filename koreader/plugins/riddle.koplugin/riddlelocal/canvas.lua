@@ -31,8 +31,6 @@ function Canvas:updateStatus()
 end
 
 function Canvas:onShow()
-    self.journal_awake = self.journal_awake or require("riddlelocal/awake").new(self.kui)
-    self.journal_awake:start()
     self.bottom_controls = Buttons:new{width=self.screen_w,buttons={{
         {text="Fermer",callback=function() self:closeCanvas() end},
     }}}
@@ -144,19 +142,11 @@ function Canvas:rawRelease(handoff, tev)
 end
 
 function Canvas:onSuspend()
-    if self.journal_awake then self.journal_awake:stop(true) end
     if self.journal_controls then self.journal_controls:hide() end
     return Base.onSuspend(self)
 end
 
-function Canvas:onResume()
-    local result = Base.onResume(self)
-    if self.journal_awake then self.journal_awake:start() end
-    return result
-end
-
 function Canvas:onCloseWidget()
-    if self.journal_awake then self.journal_awake:stop(false) end
     if self.journal_controls then self.journal_controls:hide() end
     if self.bottom_controls then self.bottom_controls:free(); self.bottom_controls=nil end
     return Base.onCloseWidget(self)
