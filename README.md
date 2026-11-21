@@ -4,6 +4,12 @@ A handwritten diary for jailbroken Kindle readers. Write on the page, watch the 
 
 This is the Kindle client and its handwriting renderer. A compatible HTTPS relay and a separate assistant are required for replies. The relay protocol is documented in [PROTOCOL.md](PROTOCOL.md). The original riddle application targets reMarkable hardware.
 
+## Demo
+
+![Animated demo: “Is anyone there?” is written and dissolves. Burn holes reveal the reply, “I am here.”](docs/journal-demo.gif)
+
+*Fictional exchange rendered with the journal’s ink and burn effects. Timing is shortened for the demo.*
+
 **Prerequisite:** your Kindle must already be jailbroken before you install this project.
 
 ## Connect an assistant
